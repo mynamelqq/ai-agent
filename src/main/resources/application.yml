@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    username: root
+    password: 88559886
+    url: jdbc:mysql://localhost:3306/love_ai?useUnicode=true&characterEncoding=utf8
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  application:
+    name: ai-gent
+  profiles:
+    active: local
+  ai:
+    ollama:
+      chat:
+        model: gpt-oss:latest
+      base-url: http://localhost:11434
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+  group-configs:
+    - group: 'default'
+      paths-to-match: '/**'
+      packages-to-scan: com.ai.aigent.controller
+# knife4j???????????????
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+server:
+  port: 8123
+  servlet:
+    context-path: /api
+mybatis-plus:
+  configuration:
+     map-underscore-to-camel-case: true
+  mapper-locations: classpath:mapper/*.xml  # XML文件位置
+  type-aliases-package: com.ai.aigent.entity  # 实体类包
