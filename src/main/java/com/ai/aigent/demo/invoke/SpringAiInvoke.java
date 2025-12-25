@@ -2,12 +2,14 @@ package com.ai.aigent.demo.invoke;
 
 import jakarta.annotation.Resource;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
 @Component
 public class SpringAiInvoke implements CommandLineRunner {
     @Resource
+    @Qualifier("ollamaChatModel")
     private ChatModel ollamaChatModel;
 //    @Resource ChatModel dashscopeChatModel;
     @Override

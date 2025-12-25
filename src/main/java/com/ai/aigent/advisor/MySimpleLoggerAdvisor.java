@@ -4,8 +4,10 @@ package com.ai.aigent.advisor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.advisor.api.*;
 import org.springframework.ai.chat.model.MessageAggregator;
+import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 @Slf4j
+@Component
 public class MySimpleLoggerAdvisor implements CallAroundAdvisor, StreamAroundAdvisor {
 
 
@@ -14,11 +16,12 @@ public class MySimpleLoggerAdvisor implements CallAroundAdvisor, StreamAroundAdv
     }
 
     public int getOrder() {
-        return 0;
+        return 10000;
     }
-
     private AdvisedRequest before(AdvisedRequest request) {
-        log.info("AI Request :{}",request.userText());
+        log.info("AI Request :{}",request.toPrompt().getContents());
+
+
         return request;
     }
 
