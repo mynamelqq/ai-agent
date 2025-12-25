@@ -1,18 +1,38 @@
 spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: 123321
+    virtual-host: /
   datasource:
-    username: root
-    password: 88559886
-    url: jdbc:mysql://localhost:3306/love_ai?useUnicode=true&characterEncoding=utf8
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    mysql:
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        jdbc-url: jdbc:mysql://localhost:3306/love_ai?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+        username: root
+        password: 88559886
+    postgresql:
+        driver-class-name: org.postgresql.Driver
+        jdbc-url: jdbc:postgresql://192.168.60.130:5432/postgres
+        username: postgres
+        password: 123456
   application:
     name: ai-gent
   profiles:
     active: local
   ai:
+    vectors tore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        max-document-batch-size: 10000
     ollama:
       chat:
-        model: gpt-oss:latest
+        model: deepseek-r1:7b
+
       base-url: http://localhost:11434
+      embedding:
+        model: nomic-embed-text
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
@@ -34,6 +54,11 @@ server:
   servlet:
     context-path: /api
 mybatis-plus:
+  global-config:
+    db-config:
+      logic-delete-field: isDeleted # 默认字段名为 deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0 # 逻辑未删除值（默认为 0）
   configuration:
      map-underscore-to-camel-case: true
   mapper-locations: classpath:mapper/*.xml  # XML文件位置

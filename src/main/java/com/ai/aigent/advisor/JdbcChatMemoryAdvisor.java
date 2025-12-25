@@ -1,4 +1,4 @@
-package com.ai.aigent.app;
+package com.ai.aigent.advisor;
 
 import com.ai.aigent.entity.ChatMessage;
 import com.ai.aigent.service.ChatMessageService;
@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 @Component
-public class JdbcChatMemory implements ChatMemory {
+public class JdbcChatMemoryAdvisor implements ChatMemory {
 
     @Resource
     ChatMessageService chatMessageService;
