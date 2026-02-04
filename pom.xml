@@ -27,10 +27,12 @@
         <url/>
     </scm>
     <properties>
+        <springdoc.version>2.8.4</springdoc.version>
         <java.version>21</java.version>
     </properties>
     <dependencyManagement>
     <dependencies>
+
         <dependency>
             <groupId>org.mybatis</groupId>
             <artifactId>mybatis-spring</artifactId>
@@ -39,6 +41,11 @@
     </dependencies>
 </dependencyManagement>
     <dependencies>
+         <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -84,42 +91,138 @@
 
             <version>2.22.3</version>
         </dependency>
+<!--        <dependency>-->
+<!--         <groupId>org.springframework.ai</groupId>-->
+<!--         <artifactId>spring-ai-ollama-spring-boot-starter</artifactId>-->
+<!--            <version>1.0.0-M6</version>-->
+<!--      </dependency>-->
+        <!-- Source: https://mvnrepository.com/artifact/org.springframework.ai/spring-ai-starter-model-ollama -->
         <dependency>
-         <groupId>org.springframework.ai</groupId>
-         <artifactId>spring-ai-ollama-spring-boot-starter</artifactId>
-            <version>1.0.0-M6</version>
-      </dependency>
-
-        <dependency>
-          <groupId>com.alibaba.cloud.ai</groupId>
-          <artifactId>spring-ai-alibaba-starter</artifactId>
-          <version>1.0.0-M6.1</version>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-ollama</artifactId>
+            <version>1.1.0</version>
+            <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.17.2</version>
+        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>org.springframework.ai</groupId>-->
+<!--            <artifactId>spring-ai-mcp-client-spring-boot-starter</artifactId>-->
+<!--            <version>1.1.0</version>-->
+<!--        </dependency>-->
+        <!-- Source: https://mvnrepository.com/artifact/org.springframework.ai/spring-ai-starter-mcp-client -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-client</artifactId>
+            <version>1.1.0</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>2.0.30</version>
+        </dependency>
+        <!-- Source: https://mvnrepository.com/artifact/com.alibaba.cloud.ai/spring-ai-alibaba-starter-dashscope -->
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
+            <version>1.1.0.0</version>
+            <scope>compile</scope>
+        </dependency>
+<!--        <dependency>-->
+<!--          <groupId>com.alibaba.cloud.ai</groupId>-->
+<!--          <artifactId>spring-ai-alibaba-starter</artifactId>-->
+<!--          <version>1.1.0</version>-->
+<!--        </dependency>-->
         <dependency>
         <groupId>com.github.xiaoymin</groupId>
         <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
         <version>4.4.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springdoc</groupId>
+                    <artifactId>springdoc-openapi-*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+            <version>1.1.0</version>  <!-- 或与你的其他依赖版本一致 -->
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-vertex-ai-gemini</artifactId>
+            <version>1.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-chat-memory-repository-jdbc</artifactId>
+            <version>1.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-deepseek</artifactId>
+            <version>1.1.0</version>
+        </dependency>
+        <!-- JJWT API -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.11.5</version>  <!-- 注意：0.12.x 是较新版本 -->
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.11.5</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.11.5</version>
+            <scope>runtime</scope>
         </dependency>
         <dependency>
         <groupId>com.esotericsoftware</groupId>
         <artifactId>kryo</artifactId>
         <version>5.6.0</version>
     </dependency>
+
     <dependency>
         <groupId>org.springframework.ai</groupId>
         <artifactId>spring-ai-markdown-document-reader</artifactId>
-        <version>1.0.0-M6</version>
+        <version>1.1.0</version>
     </dependency>
         <dependency>
         <groupId>org.postgresql</groupId>
         <artifactId>postgresql</artifactId>
+            <version>42.7.3</version>
         <scope>runtime</scope>
+    </dependency>
+    <dependency>
+       <groupId>org.springframework.ai</groupId>
+       <artifactId>spring-ai-advisors-vector-store</artifactId>
+        <version>1.1.0</version>
     </dependency>
         <!-- Spring AI pgvector -->
     <dependency>
         <groupId>org.springframework.ai</groupId>
         <artifactId>spring-ai-pgvector-store</artifactId>
-        <version>1.0.0-M6</version>
+        <version>1.1.0</version>
+    </dependency>
+    <dependency>
+         <groupId>com.qcloud</groupId>
+         <artifactId>cos_api</artifactId>
+         <version>5.6.227</version>
+    </dependency>
+    <dependency>
+        <groupId>commons-io</groupId>
+        <artifactId>commons-io</artifactId>
+        <version>2.6</version>
     </dependency>
     <!-- https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-starter-amqp -->
     <dependency>
@@ -152,34 +255,55 @@
             </plugin>
         </plugins>
     </build>
-    <repositories>
-        <repository>
-            <id>spring-snapshots</id>
-            <name>Spring Snapshots</name>
-            <url>https://repo.spring.io/snapshot</url>
-            <releases>
-                <enabled>false</enabled>
-            </releases>
-        </repository>
+   <repositories>
+    <!-- Snapshots 仓库 -->
+    <repository>
+        <id>spring-snapshots</id>
+        <name>Spring Snapshots</name>
+        <url>https://repo.spring.io/snapshot</url>
+        <releases>
+            <enabled>false</enabled>
+        </releases>
+        <!-- 这里缺少了 snapshots 的结束标签 -->
+        <snapshots>
+            <enabled>true</enabled>  <!-- snapshots 应该启用 -->
+        </snapshots>  <!-- 添加这个结束标签 -->
+    </repository>
 
-        <repository>
+    <!-- Milestones 仓库 -->
+    <repository>
         <id>spring-milestones</id>
         <name>Spring Milestones</name>
         <url>https://repo.spring.io/milestone</url>
+        <releases>
+            <enabled>true</enabled>
+        </releases>
         <snapshots>
-        <enabled>false</enabled>
+            <enabled>false</enabled>
         </snapshots>
-        </repository>
+    </repository>
+    <repository>
+        <id>tencent-cloud</id>
+        <url>https://repo.cloud.tencent.com/repository/maven-public/</url>
+    </repository>
+    <repository>
+        <id>maven-central</id>
+        <url>https://repo.maven.apache.org/maven2</url>
+    </repository>
 </repositories>
-    <pluginRepositories>
-        <pluginRepository>
-            <id>spring-snapshots</id>
-            <name>Spring Snapshots</name>
-            <url>https://repo.spring.io/snapshot</url>
-            <releases>
-                <enabled>false</enabled>
-            </releases>
-        </pluginRepository>
-    </pluginRepositories>
+
+<pluginRepositories>
+    <pluginRepository>
+        <id>spring-snapshots</id>
+        <name>Spring Snapshots</name>
+        <url>https://repo.spring.io/snapshot</url>
+        <releases>
+            <enabled>false</enabled>
+        </releases>
+        <snapshots>
+            <enabled>true</enabled>
+        </snapshots>
+    </pluginRepository>
+</pluginRepositories>
 
 </project>

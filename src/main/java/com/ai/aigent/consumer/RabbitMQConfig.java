@@ -17,7 +17,6 @@ public class RabbitMQConfig {
     @Bean
     public TopicExchange summaryExchange() {
         return new TopicExchange("summaryChatExchange", true, false);
-        // 参数说明：name, durable, autoDelete
     }
     @Bean
     public Binding summaryBinding() {
@@ -25,5 +24,19 @@ public class RabbitMQConfig {
                 .to(summaryExchange())
                 .with("summary.#");  // 使用通配符，更灵活
     }
-
+    @Bean
+    public Queue chatEmbeddingQueue() {
+        return new Queue("ChatVectorStoreQueue",true,false,false);
+    }
+    @Bean
+    public TopicExchange chatEmbeddingExchange() {
+        return new TopicExchange("ChatVectorStoreExchange", true, false);
+        // 参数说明：name, durable, autoDelete
+    }
+    @Bean
+    public Binding chatEmbeddingBinding() {
+        return BindingBuilder.bind(chatEmbeddingQueue())
+                .to(chatEmbeddingExchange())
+                .with("ChatVectorStore.#");  // 使用通配符，更灵活
+    }
 }

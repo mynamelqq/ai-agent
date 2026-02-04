@@ -6,14 +6,12 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.preretrieval.query.expansion.MultiQueryExpander;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-@Component
 public class MultiQueryExpanderDemo {
      private final Builder chatClientBuilder;
-     MultiQueryExpanderDemo(@Qualifier(value = "dashscopeChatModel") ChatModel dashscopChatModel)
+     MultiQueryExpanderDemo(@Qualifier(value = "dashScopeChatModel") ChatModel dashscopChatModel)
      {
          this.chatClientBuilder=ChatClient.builder(dashscopChatModel);
      }

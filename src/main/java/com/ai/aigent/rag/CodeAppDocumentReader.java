@@ -14,10 +14,10 @@ import java.util.List;
 
 @Component
 @Slf4j
-public class LoveAppDocumentReader {
+public class CodeAppDocumentReader {
     private final ResourcePatternResolver resolver;
 
-    public LoveAppDocumentReader(ResourcePatternResolver resolver) {
+    public CodeAppDocumentReader(ResourcePatternResolver resolver) {
         this.resolver = resolver;
     }
     public List<Document>loadDocuments() throws IOException {

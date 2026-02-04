@@ -65,11 +65,12 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     // ② 轻量 count
     long total = this.count(
         Wrappers.<ChatMessage>lambdaQuery()
+                .eq(ChatMessage::getIsDeleted,0)
             .eq(ChatMessage::getConversationId, conversationId)
     );
 
     // ③ 达到阈值才发 MQ（而且后面会加幂等）
-    if (total >= 2L *lastN-2) {
+    if (total >=lastN) {
         rabbitTemplate.convertAndSend(
                   "summaryChatExchange",  // Exchange 名称
             "summary",

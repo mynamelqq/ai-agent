@@ -1,0 +1,24 @@
+package com.ai.aigent.demo.invoke;
+
+import org.springframework.boot.CommandLineRunner;
+
+
+public class OpenAISpringAI implements CommandLineRunner {
+//    @Resource
+//    @Qualifier("openAiChatModel")
+//    private OpenAiChatModel openAiChatModel;
+//    @Resource
+//    private ModelScopeClient modelScopeClient;
+//    public String chatWithThinking(String message) {
+//        String call = openAiChatModel.call(message);
+//        return call;
+//    }
+    @Override
+    public void run(String... args) throws Exception {
+////      System.out.println(modelScopeClient.chat("你是谁？"));
+//        Prompt prompt = new Prompt("你是谁？");
+////        System.out.println(modelScopeClient.chat("你是谁？"));
+//        String text = openAiChatModel.call(prompt).getResult().getOutput().getText();
+//        System.out.println(text);
+    }
+}

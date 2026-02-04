@@ -18,5 +18,5 @@ public interface ChatMessageService extends IService<ChatMessage> {
      void saveMessages(String conversationId, List<Message> messages);
      List<Message> loadRecentMessages(String conversationId, int lastN);
      long countByConversationId(String conversationId);
- public Message deserialize(ChatMessage entity);
+     public Message deserialize(ChatMessage entity);
 }

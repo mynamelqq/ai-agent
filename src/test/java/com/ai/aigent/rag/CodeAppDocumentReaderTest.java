@@ -8,13 +8,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import java.io.IOException;
 import java.util.List;
 @SpringBootTest
-class LoveAppDocumentReaderTest {
+class CodeAppDocumentReaderTest {
     @Resource
-    private LoveAppDocumentReader loveAppDocumentReader;
+    private CodeAppDocumentReader codeAppDocumentReader;
     @Test
     void loadDocuments() throws IOException {
 
-        List<Document> documents = loveAppDocumentReader.loadDocuments();
+        List<Document> documents = codeAppDocumentReader.loadDocuments();
         System.out.println(documents);
     }
 }

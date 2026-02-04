@@ -21,8 +21,20 @@ spring:
   profiles:
     active: local
   ai:
+#    mcp:
+#      client:
+#        sse:
+#          connections:
+#            server1:
+#              url: http://localhost:8127
+#        stdio:
+#          servers-configuration: classpath:mcp-githubTool.json
+
+
     vectors tore:
       pgvector:
+        table-name: chat_memory_vector
+        dimensions: 1536
         index-type: HNSW
         distance-type: COSINE_DISTANCE
         max-document-batch-size: 10000
@@ -31,8 +43,8 @@ spring:
         model: deepseek-r1:7b
 
       base-url: http://localhost:11434
-      embedding:
-        model: nomic-embed-text
+
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
@@ -44,6 +56,7 @@ springdoc:
     - group: 'default'
       paths-to-match: '/**'
       packages-to-scan: com.ai.aigent.controller
+
 # knife4j???????????????
 knife4j:
   enable: true
@@ -54,12 +67,23 @@ server:
   servlet:
     context-path: /api
 mybatis-plus:
-  global-config:
-    db-config:
-      logic-delete-field: isDeleted # 默认字段名为 deleted
-      logic-delete-value: 1
-      logic-not-delete-value: 0 # 逻辑未删除值（默认为 0）
   configuration:
      map-underscore-to-camel-case: true
   mapper-locations: classpath:mapper/*.xml  # XML文件位置
   type-aliases-package: com.ai.aigent.entity  # 实体类包
+
+logging:
+  level:
+    org.springframework.ai: DEBUG
+cos:
+  secret-id: AKIDCRTIuKWVHqJaeprjOvGNK6f5IJA3xicS
+  secret-key: jIiwxnTzJTQAh3C8sRr561jIfIp9JI5h
+  bucket: efrewew-1402637531
+  domain: https://efrewew-1402637531.cos.ap-nanjing.myqcloud.com
+  region: ap-nanjing
+  upload:
+    max-size: 10485760   #10MB
+    # 预签名URL过期时间（秒）
+    presign-expiry: 3600
+  role-arn: qcs::cam::uin/100046213466:roleName/efrewew
+

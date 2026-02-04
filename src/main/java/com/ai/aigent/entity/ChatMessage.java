@@ -1,6 +1,9 @@
 package com.ai.aigent.entity;
 
-import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import org.apache.ibatis.type.ByteArrayTypeHandler;
 
@@ -24,7 +27,6 @@ public class ChatMessage {
      * 
      */
     private String conversationId;
-
     /**
      * 
      */
@@ -33,11 +35,6 @@ public class ChatMessage {
     private byte[] payload;
     private Boolean hasAttachment;
     private byte[]attachment;
-    /**
-     * 
-     */
-    @TableLogic
-    @TableField(value = "is_deleted")
     private Integer isDeleted;
     private LocalDateTime createTime;
 }

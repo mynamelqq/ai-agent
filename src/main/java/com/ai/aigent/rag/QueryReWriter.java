@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 public class QueryReWriter {
     private final QueryTransformer transformer;
 
-    QueryReWriter(@Qualifier("dashscopeChatModel") ChatModel dashscopeChatModel)
+    QueryReWriter(@Qualifier("dashScopeChatModel") ChatModel dashscopeChatModel)
     {
         ChatClient.Builder builder=ChatClient.builder(dashscopeChatModel);
         this.transformer= RewriteQueryTransformer.builder().chatClientBuilder(builder)

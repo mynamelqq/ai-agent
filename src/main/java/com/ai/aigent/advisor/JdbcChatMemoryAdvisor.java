@@ -1,7 +1,9 @@
 package com.ai.aigent.advisor;
 
+import com.ai.aigent.constant.AiCientConstans;
 import com.ai.aigent.entity.ChatMessage;
 import com.ai.aigent.service.ChatMessageService;
+import com.ai.aigent.service.ConversationService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.Resource;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -9,12 +11,14 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+
 @Component
-public class JdbcChatMemoryAdvisor implements ChatMemory {
+public  class JdbcChatMemoryAdvisor implements ChatMemory {
 
     @Resource
     ChatMessageService chatMessageService;
-
+    @Resource
+    private ConversationService conversationservice;
     @Override
     public void add(String conversationId, Message message) {
          chatMessageService.saveMessage(conversationId, message);
@@ -29,9 +33,15 @@ public class JdbcChatMemoryAdvisor implements ChatMemory {
     }
 
     @Override
-    public List<Message> get(String conversationId, int lastN) {
-        return chatMessageService.loadRecentMessages(conversationId,lastN);
+    public List<Message> get(String conversationId) {
+        return chatMessageService.loadRecentMessages(conversationId, AiCientConstans.SHORT_MEMORY_LENGTH);
     }
+
+
+//    @Override
+//    public List<Message> get(String conversationId, int lastN) {
+//        return chatMessageService.loadRecentMessages(conversationId,lastN);
+//    }
 
     @Override
     public void clear(String conversationId) {

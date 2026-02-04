@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: pexels
+  profiles:
+    active:
+      sse
+server:
+  port: 8127

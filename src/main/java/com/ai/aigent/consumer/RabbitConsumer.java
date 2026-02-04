@@ -1,26 +1,38 @@
 package com.ai.aigent.consumer;
 
-import com.ai.aigent.AiCientConstans;
+import cn.hutool.core.util.RandomUtil;
+import cn.hutool.json.JSONUtil;
+import com.ai.aigent.constant.AiCientConstans;
 import com.ai.aigent.entity.ChatMessage;
+import com.ai.aigent.entity.dto.ChatEmbeddingDTO;
 import com.ai.aigent.service.ChatMessageService;
 import com.ai.aigent.service.ChatSummaryService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+
 @Service
+@Slf4j
 public class RabbitConsumer {
     private final static String cueWord = "你是一个对话摘要器。\n" +
             "\n" +
@@ -35,45 +47,92 @@ public class RabbitConsumer {
             "{messages}";
 
     @Resource
-    @Qualifier("dashscopeChatModel")
-    private ChatModel dashscopeChatModel;
+    @Qualifier("openAiChatModel")
+    private OpenAiChatModel openAiChatModel;
     @Resource
     private ChatSummaryService chatSummaryService;
     @Resource
     private ChatMessageService chatMessageService;
     @RabbitListener(queues = "summaryChat")
+    @Transactional
     public void receiveMessage(String message) {//发送id序列
         String id=message;
         //从数据库中查出要摘要的10条然后拼到strs中，需要加上messageType以告知是谁说的
         List<ChatMessage> oldestMessages = chatMessageService.list(
         Wrappers.<ChatMessage>lambdaQuery()
             .eq(ChatMessage::getConversationId, id)
+                .eq(ChatMessage::getIsDeleted,0)
             .orderByAsc(ChatMessage::getCreateTime)//升序排序
             .last("LIMIT "+ AiCientConstans.SHORT_MEMORY_LENGTH)
          );
-        if (oldestMessages.size()<6) {
+        if (oldestMessages.size()<AiCientConstans.SHORT_MEMORY_LENGTH) {
             return;
         }
         StringBuilder strs = new StringBuilder();
 
        for (ChatMessage entity : oldestMessages) {
             Message msg =chatMessageService.deserialize(entity);
-
+            entity.setIsDeleted(1);
             strs.append(formatMessage(msg))
                 .append("\n");
        }
+       chatMessageService.updateBatchById(oldestMessages);
         PromptTemplate promptTemplate =
                 new PromptTemplate(cueWord);
         Prompt prompt = promptTemplate.create(Map.of("messages", strs));
-        ChatResponse call = dashscopeChatModel.call(prompt);
+        ChatResponse call = openAiChatModel.call(prompt);
+
         chatSummaryService.updateSummary(id,call.getResult().getOutput().getText());//更新摘要
-        chatMessageService.removeByIds(
-                oldestMessages.stream()
-                    .map(ChatMessage::getId)
-                    .toList()
-        );
 
     }
+
+    @Resource
+    private JdbcTemplate jdbcTemplate;
+    @Resource
+    private VectorStore codeAppVectorStore;
+    @Transactional
+    @RabbitListener(queues = "ChatVectorStoreQueue")
+    public void receiveMessageFromVectorStore(String  message) {
+        ChatEmbeddingDTO dto = JSONUtil.toBean(message, ChatEmbeddingDTO.class, true);
+         try {
+            // 1️⃣ 拼接 Q + A（向量内容）
+            String content = buildContent(dto.getUserMessage(), dto.getAssistantMessage());
+
+             // 3️⃣ 写入 pgvector（vector 类型）
+            String sql = "insert into chat_memory_vector" +
+             " (id, user_id, conservation_id, memory_type, created_at, is_deleted) values (?, ?, ?, ?, now(), false)";
+
+            if(dto.getUserId().isBlank()){
+                dto.setUserId(RandomUtil.randomNumbers(10));
+            }
+
+            String documentId = UUID.randomUUID().toString();
+            Map<String, Object> params = new HashMap<>();
+            Document document = new Document(documentId, content, params);
+                // 先保存到向量存储
+                codeAppVectorStore.add(List.of(document));
+
+                // 然后保存到关系数据库，使用相同的 ID
+                jdbcTemplate.update(sql,
+                        documentId,  // 使用 UUID 格式的 ID
+                        Long.parseLong(dto.getUserId()),
+                        dto.getChatId(),
+                        dto.getMemoryType()
+                );
+
+                log.info("Vector saved: userId={}, sessionId={}, documentId={}",
+                         dto.getUserId(), dto.getChatId(), documentId);
+            } catch (Exception e) {
+                log.error("ChatVectorStore 消费失败: {}", dto, e);
+            }
+    }
+
+
+     private String buildContent(String userMsg, String aiMsg) {
+        return "Q: " + userMsg + "\nA: " + aiMsg;
+    }
+
+
     private String formatMessage(Message message) {
 
         String role;
