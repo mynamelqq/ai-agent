@@ -7,6 +7,8 @@ import com.ai.aigent.entity.ChatMessage;
 import com.ai.aigent.entity.dto.ChatEmbeddingDTO;
 import com.ai.aigent.service.ChatMessageService;
 import com.ai.aigent.service.ChatSummaryService;
+import com.alibaba.cloud.ai.document.TextDocumentParser;
+import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -26,10 +28,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 @Slf4j
@@ -90,43 +89,57 @@ public class RabbitConsumer {
     private JdbcTemplate jdbcTemplate;
     @Resource
     private VectorStore codeAppVectorStore;
-    @Transactional
-    @RabbitListener(queues = "ChatVectorStoreQueue")
-    public void receiveMessageFromVectorStore(String  message) {
-        ChatEmbeddingDTO dto = JSONUtil.toBean(message, ChatEmbeddingDTO.class, true);
-         try {
-            // 1️⃣ 拼接 Q + A（向量内容）
-            String content = buildContent(dto.getUserMessage(), dto.getAssistantMessage());
+//    @Transactional
+//    @RabbitListener(queues = "ChatVectorStoreQueue")
+//    public void receiveMessageFromVectorStore(String  message) {
+//        ChatEmbeddingDTO dto = JSONUtil.toBean(message, ChatEmbeddingDTO.class, true);
+//         try {
+//            // 1️⃣ 拼接 Q + A（向量内容）
+//             String content = buildContent(dto.getUserMessage(), dto.getAssistantMessage());
+//            if (StringUtils.isBlank(dto.getUserId())) {
+//                dto.setUserId(RandomUtil.randomNumbers(10));
+//            }
+//            List<String> chunks = splitByTokens(content);
+//            for (String chunk : chunks) {
+//                String documentId = UUID.randomUUID().toString();
+//                Document document = new Document(documentId, chunk, Map.of());
+//                codeAppVectorStore.add(List.of(document));
+//                jdbcTemplate.update(
+//                    "insert into chat_memory_vector (id, user_id, conservation_id, memory_type, created_at, is_deleted) values (?, ?, ?, ?, now(), false)",
+//                    documentId,
+//                    Long.parseLong(dto.getUserId()),
+//                    dto.getChatId(),
+//                    dto.getMemoryType()
+//                );
+//
+//                log.info("Vector saved: userId={}, sessionId={}, documentId={}",
+//                        dto.getUserId(), dto.getChatId(), documentId);
+//            }
+//            } catch (Exception e) {
+//                log.error("ChatVectorStore 消费失败: {}", dto, e);
+//            }
+//    }
 
-             // 3️⃣ 写入 pgvector（vector 类型）
-            String sql = "insert into chat_memory_vector" +
-             " (id, user_id, conservation_id, memory_type, created_at, is_deleted) values (?, ?, ?, ?, now(), false)";
+    private List<String> splitByTokens(String content) {
+        List<String> chunks = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int currentTokens = 0;
 
-            if(dto.getUserId().isBlank()){
-                dto.setUserId(RandomUtil.randomNumbers(10));
+        for (String line : content.split("\n")) {
+            int lineTokens = line.length();
+            if (currentTokens + lineTokens > AiCientConstans.MAX_LENGTH_EMBEDDING) {
+                chunks.add(current.toString());
+                current = new StringBuilder();
+                currentTokens = 0;
             }
-
-            String documentId = UUID.randomUUID().toString();
-            Map<String, Object> params = new HashMap<>();
-            Document document = new Document(documentId, content, params);
-                // 先保存到向量存储
-                codeAppVectorStore.add(List.of(document));
-
-                // 然后保存到关系数据库，使用相同的 ID
-                jdbcTemplate.update(sql,
-                        documentId,  // 使用 UUID 格式的 ID
-                        Long.parseLong(dto.getUserId()),
-                        dto.getChatId(),
-                        dto.getMemoryType()
-                );
-
-                log.info("Vector saved: userId={}, sessionId={}, documentId={}",
-                         dto.getUserId(), dto.getChatId(), documentId);
-            } catch (Exception e) {
-                log.error("ChatVectorStore 消费失败: {}", dto, e);
-            }
+            current.append(line).append("\n");
+            currentTokens += lineTokens;
+        }
+        if (!current.isEmpty()) {
+            chunks.add(current.toString());
+        }
+        return chunks;
     }
-
 
      private String buildContent(String userMsg, String aiMsg) {
         return "Q: " + userMsg + "\nA: " + aiMsg;

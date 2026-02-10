@@ -1,5 +1,6 @@
 package com.ai.aigent.advisor;
 
+import com.ai.aigent.service.ChatMessageService;
 import jakarta.annotation.Resource;
 import org.springframework.ai.chat.client.ChatClientMessageAggregator;
 import org.springframework.ai.chat.client.ChatClientRequest;
@@ -13,6 +14,7 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
@@ -22,26 +24,31 @@ import java.util.stream.Collectors;
 @Component
 public class VectorStoreMemoryAdvisor implements CallAdvisor, StreamAdvisor {
     @Resource
+    @Qualifier("codeAppVectorStore")
     private VectorStore vectorStore;
-
+    @Resource
+    private ChatMessageService chatMessageService;
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest chatClientRequest, CallAdvisorChain callAdvisorChain) {
-         List<Document> docs = vectorStore.similaritySearch(
-                SearchRequest.builder()
-                        .query(chatClientRequest.prompt().getInstructions().getLast().getText())
-                        .similarityThreshold(0.4)
-                        .topK(5)
-                        .build()
-        );
-        String memoryContext = docs.stream()
-                .map(Document::getText)
-                .collect(Collectors.joining("\n"));
+  List<Document> docs = vectorStore.similaritySearch(
+                        SearchRequest.builder()
+                                .query(chatClientRequest.prompt().getInstructions().getLast().getText())
+                                .similarityThreshold(0.39)
+                                .topK(4)
+                                .build()
+                );
+                String memoryContext = docs.stream()
+                        .map(Document::getText)
+                        .collect(Collectors.joining("\n"));
 
-     List < Message > instructions = chatClientRequest.prompt().getInstructions();
-    String text = instructions.get(0).getText();
-    Message message=new SystemMessage(text + "以下是与你相关的历史记忆：\n"+ memoryContext + "\n");
-    instructions.set(0,message);
-    chatClientRequest.prompt().mutate().messages(instructions);
+         List < Message > instructions = chatClientRequest.prompt().getInstructions();
+        String id = chatClientRequest.context().get("chat_memory_conversation_id").toString();
+        String mid=chatClientRequest.context().get("messageId").toString();
+        chatMessageService.saveMessage(id,instructions.getLast(),mid);
+        String text = instructions.get(instructions.size()-2).getText();
+        Message message=new SystemMessage(text + "以下是与用户相关的历史记忆：\n"+ memoryContext + "\n");
+        instructions.set(instructions.size()-2,message);
+        chatClientRequest.prompt().mutate().messages(instructions);
     ChatClientResponse chatClientResponse = callAdvisorChain.nextCall(chatClientRequest);
 
     logResponse(chatClientResponse);
@@ -51,23 +58,26 @@ public class VectorStoreMemoryAdvisor implements CallAdvisor, StreamAdvisor {
 
     @Override
     public Flux<ChatClientResponse> adviseStream(ChatClientRequest chatClientRequest, StreamAdvisorChain streamAdvisorChain) {
-         List<Document> docs = vectorStore.similaritySearch(
+         List < Message > instructions = chatClientRequest.prompt().getInstructions();
+        if(chatClientRequest.prompt().getUserMessage().getText().length()>=20)
+        {
+             List<Document> docs = vectorStore.similaritySearch(
                         SearchRequest.builder()
                                 .query(chatClientRequest.prompt().getInstructions().getLast().getText())
-                                .similarityThreshold(0.31)
-                                .topK(4)
+                                .similarityThreshold(0.4)
+                                .topK(5)
                                 .build()
                 );
-                String memoryContext = docs.stream()
-                        .map(Document::getText)
-                        .collect(Collectors.joining("\n"));
+            String memoryContext = docs.stream()
+                    .map(Document::getText)
+                    .collect(Collectors.joining("\n"));
 
-             List < Message > instructions = chatClientRequest.prompt().getInstructions();
-            String text = instructions.get(0).getText();
+
+            String text = instructions.get(instructions.size()-2).getText();
             Message message=new SystemMessage(text + "以下是与用户相关的历史记忆：\n"+ memoryContext + "\n");
-            instructions.set(0,message);
+            instructions.set(instructions.size()-2,message);
             chatClientRequest.prompt().mutate().messages(instructions);
-
+        }
 
         Flux<ChatClientResponse> chatClientResponses = streamAdvisorChain.nextStream(chatClientRequest);
 
@@ -81,7 +91,7 @@ public class VectorStoreMemoryAdvisor implements CallAdvisor, StreamAdvisor {
 
     @Override
     public int getOrder() {
-        return 0;
+        return 1000000;
     }
     private void logResponse(ChatClientResponse chatClientResponse) {
         }

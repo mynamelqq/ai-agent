@@ -10,7 +10,7 @@ import java.util.List;
 @SpringBootTest
 class CodeAppDocumentReaderTest {
     @Resource
-    private CodeAppDocumentReader codeAppDocumentReader;
+    private MarkDownDocumentReaderUtils codeAppDocumentReader;
     @Test
     void loadDocuments() throws IOException {
 

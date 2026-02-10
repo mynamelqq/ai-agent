@@ -1,8 +1,11 @@
 package com.ai.aigent.entity.VO;
 
+import com.ai.aigent.entity.AiAttachment;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
+
 @Data
 public class ChatMessageVO {
 
@@ -12,7 +15,7 @@ public class ChatMessageVO {
 
     private String messageType;
     private String payload;
-
+    List<AttachmentVO>aiAttachments;
 
 
 

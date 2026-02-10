@@ -36,10 +36,10 @@ public class SummaryMemoryAdvisor implements CallAdvisor, StreamAdvisor {
         String summary = chatSummaryService.getSummary(id);
         if(StringUtils.isNotBlank(summary)&& !summary.isEmpty())
         {
-              List<Message> instructions = chatClientRequest.prompt().getInstructions();
-                String text = instructions.get(0).getText();
+                List<Message> instructions = chatClientRequest.prompt().getInstructions();
+                String text = instructions.get(instructions.size()-2).getText();
                 Message message=new SystemMessage(text+"\n【长期记忆摘要】\n" + summary + "\n【结束】");
-                instructions.set(0,message);
+                instructions.set(instructions.size()-2,message);
                 chatClientRequest.prompt().mutate().messages(instructions);
 
         }
@@ -58,12 +58,11 @@ public class SummaryMemoryAdvisor implements CallAdvisor, StreamAdvisor {
 
         if(StringUtils.isNotBlank(summary)&& !summary.isEmpty())
         {
-              List<Message> instructions = chatClientRequest.prompt().getInstructions();
+                List<Message> instructions = chatClientRequest.prompt().getInstructions();
                 String text = instructions.get(instructions.size()-2).getText();
                 Message message=new SystemMessage(text+"\n【长期记忆摘要】\n" + summary + "\n【结束】");
                 instructions.set(instructions.size()-2,message);
                 chatClientRequest.prompt().mutate().messages(instructions);
-
         }
 		Flux<ChatClientResponse> chatClientResponses = streamAdvisorChain.nextStream(chatClientRequest);
 

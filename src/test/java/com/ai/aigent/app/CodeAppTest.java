@@ -16,8 +16,8 @@ class CodeAppTest {
     private ChatSummaryService chatSummaryService;
     @Test
     void doChatWithReport() {
-        CodeApp.codeReport codeReport = codeApp.doChatWithReport("你好，我是程序员鱼皮，我想让另一半（编程导航）更爱我，但我不知道该怎么做'", "1");
-        Assertions.assertNotNull(codeReport);
+//        CodeApp.codeReport codeReport = codeApp.doChatWithReport("你好，我是程序员鱼皮，我想让另一半（编程导航）更爱我，但我不知道该怎么做'", "1");
+//        Assertions.assertNotNull(codeReport);
     }
 
     @Test

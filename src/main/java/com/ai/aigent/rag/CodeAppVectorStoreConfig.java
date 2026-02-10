@@ -13,22 +13,38 @@ public class CodeAppVectorStoreConfig {
 
 
 
-@Bean
-@Qualifier("codeAppVectorStore")
-public VectorStore codeAppVectorStore(
+    @Bean
+    @Qualifier("codeAppVectorStore")
+    public VectorStore codeAppVectorStore(
         @Qualifier("postgresqlJdbcTemplate") JdbcTemplate jdbcTemplate,
         DashScopeEmbeddingModel embeddingModel
         ) {
 
-    PgVectorStore vectorStore = PgVectorStore.builder(jdbcTemplate, embeddingModel)
-            .dimensions(1536)                      // ⚠️ 必须和 embedding 模型维度一致
-            .distanceType(PgVectorStore.PgDistanceType.COSINE_DISTANCE)
-            .vectorTableName("vector_store") // 向量表名
-            .initializeSchema(true)               // 启动时自动建表（开发环境建议 true，生产可关）
-            .build();
+        PgVectorStore vectorStore = PgVectorStore.builder(jdbcTemplate, embeddingModel)
+                .dimensions(1536)                      // ⚠️ 必须和 embedding 模型维度一致
+                .distanceType(PgVectorStore.PgDistanceType.COSINE_DISTANCE)
+                .vectorTableName("vector_store") // 向量表名
+                .initializeSchema(true)               // 启动时自动建表（开发环境建议 true，生产可关）
+                .build();
 
-    return vectorStore;
-}
+        return vectorStore;
+    }
 
+    @Bean
+    @Qualifier("attachmentVectorStore")
+    public VectorStore attachmentVectorStore(
+        @Qualifier("postgresqlJdbcTemplate") JdbcTemplate jdbcTemplate,
+        DashScopeEmbeddingModel embeddingModel
+        ) {
+        PgVectorStore vectorStore = PgVectorStore.builder(jdbcTemplate, embeddingModel)
+                .dimensions(1536)
+                .distanceType(PgVectorStore.PgDistanceType.COSINE_DISTANCE)
+                .maxDocumentBatchSize(20000)
+                .distanceType(PgVectorStore.PgDistanceType.COSINE_DISTANCE)
+                .vectorTableName("vector_store_att") // 向量表名
+                .initializeSchema(true)               // 启动时自动建表（开发环境建议 true，生产可关）
+                .build();
+        return vectorStore;
+    }
 
 }

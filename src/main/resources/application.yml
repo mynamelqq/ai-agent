@@ -33,11 +33,7 @@ spring:
 
     vectors tore:
       pgvector:
-        table-name: chat_memory_vector
-        dimensions: 1536
-        index-type: HNSW
-        distance-type: COSINE_DISTANCE
-        max-document-batch-size: 10000
+
     ollama:
       chat:
         model: deepseek-r1:7b
@@ -76,8 +72,8 @@ logging:
   level:
     org.springframework.ai: DEBUG
 cos:
-  secret-id: AKIDCRTIuKWVHqJaeprjOvGNK6f5IJA3xicS
-  secret-key: jIiwxnTzJTQAh3C8sRr561jIfIp9JI5h
+  secret-id: AKIDz4zhA2lIbr8IG0NjxxqX0FG4dyGm9JJw
+  secret-key: Yu3Fk4Nbluwt7E8oIYbPzKSL0TjlbJo5
   bucket: efrewew-1402637531
   domain: https://efrewew-1402637531.cos.ap-nanjing.myqcloud.com
   region: ap-nanjing

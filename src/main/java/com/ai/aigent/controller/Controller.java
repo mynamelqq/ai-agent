@@ -3,10 +3,13 @@ package com.ai.aigent.controller;
 import cn.hutool.core.bean.BeanUtil;
 import com.ai.aigent.constant.AiCientConstans;
 import com.ai.aigent.constant.Result;
+import com.ai.aigent.entity.AiAttachment;
 import com.ai.aigent.entity.ChatMessage;
 import com.ai.aigent.entity.ChatSummary;
 import com.ai.aigent.entity.Conversation;
+import com.ai.aigent.entity.VO.AttachmentVO;
 import com.ai.aigent.entity.VO.ChatMessageVO;
+import com.ai.aigent.service.AiAttachmentService;
 import com.ai.aigent.service.ChatMessageService;
 import com.ai.aigent.service.ChatSummaryService;
 import com.ai.aigent.service.ConversationService;
@@ -17,9 +20,13 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.messages.MessageType;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -50,7 +57,24 @@ public class Controller {
         Collections.reverse(list);
         return Result.success(list);
     }
-
+    @GetMapping("/pinned")
+    public Result pinnedConservations(String conservationId)
+    {
+        Conversation conversation = conversationService.getById(conservationId);
+        if(conversation==null)return Result.error("会话不存在");
+        conversationService.lambdaUpdate().eq(Conversation::getId,conversation.getId())
+                .set(Conversation::getPinned,true).update();
+        return Result.success();
+    }
+    @GetMapping("/unpinned")
+    public Result unpinnedConservations(String conservationId)
+    {
+        Conversation conversation = conversationService.getById(conservationId);
+        if(conversation==null)return Result.error("会话不存在");
+        conversationService.lambdaUpdate().eq(Conversation::getId,conversation.getId())
+                .set(Conversation::getPinned,false).update();
+        return Result.success();
+    }
     @GetMapping("/list/message")
     public Result<List<ChatMessageVO>> listMessage(String ChatId)
     {
@@ -65,6 +89,8 @@ public class Controller {
         if(listVO.size()>1)Collections.reverse(listVO);
         return Result.success(listVO);
     }
+    @Autowired
+    private AiAttachmentService  aiAttachmentService;
     @GetMapping("/list/message/{page}")
     public Result<Page<ChatMessageVO>> listMessage(String ChatId,@PathVariable int page)
     {
@@ -79,12 +105,32 @@ public class Controller {
          Page.setCurrent(page1.getCurrent());
          Page.setPages(page1.getPages());
          Page.setTotal(page1.getTotal());
+         List<ChatMessageVO>listVO = new ArrayList<>();
+         for(ChatMessage chat:page1.getRecords())
+         {
+             ChatMessageVO chatVO=new ChatMessageVO();
+             if(chat.getMessageType().equals(MessageType.USER.getValue()))//有附件
+             {
+                 List<AiAttachment> list = aiAttachmentService.list(new LambdaQueryWrapper<AiAttachment>()
+                         .eq(AiAttachment::getChatId, chat.getId())
+                 );
+                 if(list!=null&&!list.isEmpty()){
 
-         List<ChatMessageVO>listVO =page1.getRecords().stream().map(l->
-                {ChatMessageVO chat=new ChatMessageVO(); BeanUtil.copyProperties(l,chat);
-                    chat.setPayload(chatMessageService.deserialize(l).getText());
-                    return chat;
-                }).collect(Collectors.toList());
+                     chatVO.setAiAttachments(list.stream().map(t->
+                     {
+                         AttachmentVO attachmentVO=new AttachmentVO();
+                         BeanUtils.copyProperties(t,attachmentVO);return attachmentVO;}).toList());
+                 }
+             }
+             BeanUtil.copyProperties(chat,chatVO);
+             chatVO.setPayload(chatMessageService.deserialize(chat).getText());
+             listVO.add(chatVO);
+         }
+//         List<ChatMessageVO>listVO =page1.getRecords().stream().map(l->
+//                {ChatMessageVO chat=new ChatMessageVO(); BeanUtil.copyProperties(l,chat);
+//                    chat.setPayload(chatMessageService.deserialize(l).getText());
+//                    return chat;
+//                }).collect(Collectors.toList());
 
         if(listVO.size()>1)Collections.reverse(listVO);
         Page.setRecords(listVO);

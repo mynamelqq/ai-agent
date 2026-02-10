@@ -34,7 +34,7 @@ public class UserController {
         String password = body.get("password");
         Users users=usersMapper.selectById(email);
         if (users!=null) {
-            throw new RuntimeException("邮箱已注册");
+            throw new RuntimeException("用户名已被注册");
         }
 
         Users user = new Users();
@@ -61,12 +61,40 @@ public class UserController {
         if (!password.equals(user.getPassword())) {
             throw new RuntimeException("密码错误");
         }
-
         UserVo userVo = new UserVo();
         BeanUtils.copyProperties(user, userVo);
         String token = JWTUtils.createRefreshToken(user.getId().toString());
         userVo.setToken(token);
         return Result.success(userVo);
+    }
+    @PostMapping("/update")
+    public Result<?> update(@RequestBody Map<String, String> body) {
+        String id = body.get("id");
+        if (id == null || id.isEmpty()) {
+            throw new RuntimeException("用户ID不能为空");
+        }
+        // 根据ID查询用户是否存在
+        Users user = usersMapper.selectById(id);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        // 获取并更新用户名（邮箱），如果需要修改用户名
+        String username = body.get("username");
+        if (username != null && !username.isEmpty()) {
+            // 检查新用户名是否已被其他人占用
+            Users checkUser = usersMapper.selectOne(new LambdaQueryWrapper<Users>().eq(Users::getUsername, username));
+            if (checkUser != null && !checkUser.getId().toString().equals(id)) {
+                throw new RuntimeException("该用户名已被占用");
+            }
+            user.setUsername(username);
+        }
+        String avatarUrl=body.get("avatar_url");
+        if (avatarUrl != null && !avatarUrl.isEmpty()) {
+            user.setAvatarUrl(avatarUrl);
+        }
+        // 执行更新操作
+        usersMapper.updateById(user);
+        return Result.success();
     }
     @PostMapping("/logout")
     public Result<?> logout(HttpServletRequest request) {

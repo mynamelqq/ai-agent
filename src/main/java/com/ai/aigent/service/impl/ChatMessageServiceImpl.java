@@ -7,6 +7,7 @@ import com.ai.aigent.utils.KryoUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
@@ -25,10 +26,23 @@ import java.util.List;
 public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatMessage>
     implements ChatMessageService {
     @Override
-    public void saveMessage(String conversationId, Message message) {
+    public void saveAssistantMessage(String conversationId, String message) {
+        AssistantMessage build = AssistantMessage.builder().content(message).build();
+        ChatMessage entity = new ChatMessage();
+            entity.setConversationId(conversationId);
+            entity.setCreateTime(LocalDateTime.now());
+            entity.setPayload(KryoUtils.serialize(build));
+            entity.setHasAttachment(false);
+            entity.setIsDeleted(0);
+            entity.setMessageType("assistant");
+            this.save(entity);
+    }
+    @Override
+    public void saveMessage(String conversationId, Message message,String messageId) {
             ChatMessage entity = new ChatMessage();
             entity.setConversationId(conversationId);
             entity.setCreateTime(LocalDateTime.now());
+            entity.setId(Long.parseLong(messageId));
             entity.setPayload(KryoUtils.serialize(message));
             entity.setHasAttachment(false);
             entity.setIsDeleted(0);
@@ -41,7 +55,8 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             ChatMessage entity = new ChatMessage();
             entity.setIsDeleted(0);
             entity.setConversationId(conversationId);
-            entity.setCreateTime(LocalDateTime.now());            entity.setHasAttachment(false);
+            entity.setCreateTime(LocalDateTime.now());
+            entity.setHasAttachment(false);
             entity.setPayload(KryoUtils.serialize(message));
             entity.setMessageType(message.getMessageType().getValue());
             this.save(entity);
@@ -56,6 +71,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         }
       List<ChatMessage> entities = this.list(
         Wrappers.<ChatMessage>lambdaQuery()
+
             .eq(ChatMessage::getConversationId, conversationId)
             .select(ChatMessage::getPayload, ChatMessage::getCreateTime)
             .orderByDesc(ChatMessage::getCreateTime)
