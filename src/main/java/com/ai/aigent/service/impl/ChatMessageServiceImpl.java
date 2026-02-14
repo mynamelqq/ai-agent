@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
@@ -32,11 +33,24 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             entity.setConversationId(conversationId);
             entity.setCreateTime(LocalDateTime.now());
             entity.setPayload(KryoUtils.serialize(build));
-            entity.setHasAttachment(false);
             entity.setIsDeleted(0);
             entity.setMessageType("assistant");
             this.save(entity);
     }
+
+    @Override
+    public void updateMessage(String conversationId, String message, String messageId, String type) {
+        if(type=="user"){
+            this.lambdaUpdate().eq(ChatMessage::getId, messageId)
+                .set(ChatMessage::getPayload, KryoUtils.serialize(new UserMessage(message))).update();
+        }
+        else{
+            this.lambdaUpdate().eq(ChatMessage::getId, messageId)
+                .set(ChatMessage::getPayload, KryoUtils.serialize(new AssistantMessage(message))).update();
+        }
+
+    }
+
     @Override
     public void saveMessage(String conversationId, Message message,String messageId) {
             ChatMessage entity = new ChatMessage();
@@ -44,7 +58,6 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             entity.setCreateTime(LocalDateTime.now());
             entity.setId(Long.parseLong(messageId));
             entity.setPayload(KryoUtils.serialize(message));
-            entity.setHasAttachment(false);
             entity.setIsDeleted(0);
             entity.setMessageType(message.getMessageType().getValue());
             this.save(entity);
@@ -56,7 +69,6 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             entity.setIsDeleted(0);
             entity.setConversationId(conversationId);
             entity.setCreateTime(LocalDateTime.now());
-            entity.setHasAttachment(false);
             entity.setPayload(KryoUtils.serialize(message));
             entity.setMessageType(message.getMessageType().getValue());
             this.save(entity);

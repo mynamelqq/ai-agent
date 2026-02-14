@@ -1,10 +1,10 @@
 package com.ai.aigent.controller;
 
-import cn.hutool.core.util.IdUtil;
 import com.ai.aigent.app.CodeApp;
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.Conversation;
 import com.ai.aigent.entity.dto.ChatSendReq;
+import com.ai.aigent.service.AiAttachmentService;
 import com.ai.aigent.service.ConversationService;
 import com.ai.aigent.utils.JWTUtils;
 import jakarta.annotation.Resource;
@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -19,7 +20,6 @@ import reactor.core.publisher.Flux;
 
 import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/ai")
@@ -55,13 +55,13 @@ public class AiController {
     {
         return codeApp.doChatStreamBlank(chatSendReq);
     }
-    @PostMapping(value = "/chat/regenerate",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ChatResponse> regenerate(ChatSendReq chatSendReq,HttpServletRequest request)
-    {
-         Object token = request.getHeader("Authorization");
-         if(token!=null)return codeApp.doChatStreamRegenerate(chatSendReq,JWTUtils.getUserId(token.toString()));
-        return codeApp.doChatStreamRegenerate(chatSendReq,"");
-    }
+//    @PostMapping(value = "/chat/regenerate",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+//    public Flux<ChatResponse> regenerate(ChatSendReq chatSendReq,HttpServletRequest request)
+//    {
+//         Object token = request.getHeader("Authorization");
+////         if(token!=null)return codeApp.doChatStreamRegenerate(chatSendReq,JWTUtils.getUserId(token.toString()));
+//        return codeApp.doChatStreamRegenerate(chatSendReq,"");
+//    }
 
     //    @GetMapping("/manus/chat")
 //    public SseEmitter doChatWithManus(String message)
@@ -69,6 +69,8 @@ public class AiController {
 //        manus=new Manus(toolCallBacks,dashscopeChatModel);
 //        return manus.runStream(message);
 //    }
+    @Autowired
+    private AiAttachmentService attachmentService;
     @GetMapping("/chat/title")
     public Result<Map<String, String>> getChatItemTitle(String message, HttpServletRequest request, String ChatId)
     {
@@ -82,6 +84,7 @@ public class AiController {
                 conversation.setCreatedAt(LocalDateTime.now());
                 conversation.setUpdatedAt(LocalDateTime.now());
                 conversation.setId(ChatId);
+                conversation.setPinned(false);
                 conversation.setUser_id(Long.parseLong(JWTUtils.getUserId(token.toString())));
                 conversationService.save(conversation);
             }

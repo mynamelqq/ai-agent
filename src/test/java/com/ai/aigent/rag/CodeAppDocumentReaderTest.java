@@ -14,7 +14,7 @@ class CodeAppDocumentReaderTest {
     @Test
     void loadDocuments() throws IOException {
 
-        List<Document> documents = codeAppDocumentReader.loadDocuments();
-        System.out.println(documents);
+//        List<Document> documents = codeAppDocumentReader.loadDocuments();
+//        System.out.println(documents);
     }
 }

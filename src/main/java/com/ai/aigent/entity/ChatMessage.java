@@ -33,8 +33,6 @@ public class ChatMessage {
     private String messageType;
     @TableField(typeHandler = ByteArrayTypeHandler.class)
     private byte[] payload;
-    private Boolean hasAttachment;
-    private byte[]attachment;
     private Integer isDeleted;
     private LocalDateTime createTime;
 }

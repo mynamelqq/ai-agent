@@ -15,6 +15,7 @@ import java.util.List;
 public interface ChatMessageService extends IService<ChatMessage> {
 
      void saveAssistantMessage(String conversationId,String message);
+     void updateMessage(String conversationId,String message,String messageId,String type);
      void saveMessage(String conversationId, Message message,String messageId);
      void saveMessages(String conversationId, List<Message> messages);
      List<Message> loadRecentMessages(String conversationId, int lastN);

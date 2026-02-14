@@ -2,8 +2,6 @@ package com.ai.aigent.entity.VO;
 
 
 import lombok.Data;
-
-import java.util.Date;
 @Data
 public class AttachmentVO {
 

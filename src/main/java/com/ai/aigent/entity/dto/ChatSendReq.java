@@ -14,4 +14,7 @@ public class ChatSendReq {
     private String mode;             // chat / agent 预留
     private String token;
     private Boolean isThinking;
+    private Boolean isImageGen;
+    private Boolean isSearch;
+    private Boolean isGenerateFile;
 }

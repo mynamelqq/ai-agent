@@ -33,18 +33,14 @@ public class VectorStoreMemoryAdvisor implements CallAdvisor, StreamAdvisor {
   List<Document> docs = vectorStore.similaritySearch(
                         SearchRequest.builder()
                                 .query(chatClientRequest.prompt().getInstructions().getLast().getText())
-                                .similarityThreshold(0.39)
+                                .similarityThreshold(0.40)
                                 .topK(4)
                                 .build()
                 );
                 String memoryContext = docs.stream()
                         .map(Document::getText)
                         .collect(Collectors.joining("\n"));
-
          List < Message > instructions = chatClientRequest.prompt().getInstructions();
-        String id = chatClientRequest.context().get("chat_memory_conversation_id").toString();
-        String mid=chatClientRequest.context().get("messageId").toString();
-        chatMessageService.saveMessage(id,instructions.getLast(),mid);
         String text = instructions.get(instructions.size()-2).getText();
         Message message=new SystemMessage(text + "以下是与用户相关的历史记忆：\n"+ memoryContext + "\n");
         instructions.set(instructions.size()-2,message);

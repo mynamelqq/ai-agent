@@ -1,124 +1,56 @@
 package com.ai.aigent.tools;
 
-import com.ai.aigent.entity.dto.WebSearchResponseDTO;
-import com.ai.aigent.entity.dto.WebSearchResultDTO;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import com.ai.aigent.entity.VO.BochaWebSearchResponse;
+import com.ai.aigent.entity.dto.BochaWebSearchRequest;
+import com.ai.aigent.utils.BochaWebSearchClient;
+import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.util.UriComponentsBuilder;
-
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 
 @Component
 public class WebSearchTool {
-
-    private final String API_KEY = "YJUPkD4ytXGqNbFMso2t3puG";
-    private final String BASE_URL = "https://www.searchapi.io/api/v1/search";
-    private final RestClient restClient = RestClient.create();
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
-    @Tool(description = "搜索互联网获取最新信息，并返回精简后的搜索结果")
-    public String searchWeb(
-            @ToolParam(description = "搜索关键词") String query) {
-
-        if (query == null || query.isBlank()) {
-            return toJson(WebSearchResponseDTO.error("query 不能为空"));
+    @Autowired
+    private BochaWebSearchClient client;
+    @Tool(
+        name = "bocha_web_search",
+        description = "从博查AI搜索网页信息，返回网页标题、摘要和链接"
+    )
+    public String webSearch(
+            @ToolParam(description = "搜索关键词，例如：阿里巴巴2024年ESG报告")
+            String query,
+            @ToolParam(description = "时间范围，如 noLimit, oneDay, oneWeek, oneMonth, oneYear")
+            String freshness,
+            @ToolParam(description = "是否返回摘要 true/false")
+            Boolean summary,
+            @ToolParam(description = "返回条数，1-20")
+            Integer count
+    ) {
+        BochaWebSearchRequest req = new BochaWebSearchRequest();
+        req.setQuery(query);
+        if (freshness != null) req.setFreshness(freshness);
+        if (summary != null) req.setSummary(summary);
+        if (count != null) req.setCount(count);
+        BochaWebSearchResponse resp = client.search(req);
+        if (resp == null || resp.getData() == null
+                || resp.getData().getWebPages() == null
+                || CollectionUtils.isEmpty(resp.getData().getWebPages().getValue())) {
+            return "未搜索到相关结果。";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("搜索结果：\n\n");
+        int i = 1;
+        for (BochaWebSearchResponse.WebPageValue v : resp.getData().getWebPages().getValue()) {
+            sb.append(i++).append(". ").append(v.getName()).append("\n")
+              .append("   来源：").append(v.getSiteName()).append("\n")
+              .append("   链接：").append(v.getUrl()).append("\n")
+              .append("   摘要：")
+              .append(v.getSummary() != null ? v.getSummary() : v.getSnippet())
+              .append("\n\n");
         }
 
-        try {
-            URI uri = UriComponentsBuilder
-                    .fromHttpUrl(BASE_URL)
-                    .queryParam("engine", "baidu")
-                    .queryParam("q", query)
-                    .queryParam("api_key", API_KEY)
-                    .build()
-                    .encode(StandardCharsets.UTF_8)
-                    .toUri();
-
-            String responseBody = restClient.get()
-                    .uri(uri)
-                    .retrieve()
-                    .body(String.class);
-
-            WebSearchResponseDTO dto = parseOrganicResults(responseBody);
-            return toJson(dto);
-
-        } catch (HttpClientErrorException e) {
-            return toJson(WebSearchResponseDTO.error(
-                    "HTTP " + e.getStatusCode().value() + ": " + e.getResponseBodyAsString()));
-        } catch (Exception e) {
-            return toJson(WebSearchResponseDTO.error("搜索失败: " + e.getMessage()));
-        }
-    }
-   private WebSearchResponseDTO parseOrganicResults(String rawJson) throws Exception {
-
-        JsonNode root = objectMapper.readTree(rawJson);
-
-        if (root.has("error")) {
-            return WebSearchResponseDTO.error(root.get("error").asText());
-        }
-
-        JsonNode organicResults = root.get("organic_results");
-        if (organicResults == null || !organicResults.isArray()) {
-            return WebSearchResponseDTO.error("搜索结果为空");
-        }
-
-        List<WebSearchResultDTO> results = new ArrayList<>();
-
-        for (JsonNode item : organicResults) {
-            String title = item.path("title").asText("");
-            String url = item.path("link").asText("");
-            String snippet = item.path("snippet").asText("");
-
-            // 过滤无效项
-            if (title.isBlank() || url.isBlank()) {
-                continue;
-            }
-
-            results.add(new WebSearchResultDTO(title, url, snippet));
-        }
-
-        // 限制条数，防止 token 爆炸（强烈建议）
-        int MAX_RESULTS = 5;
-        if (results.size() > MAX_RESULTS) {
-            results = results.subList(0, MAX_RESULTS);
-        }
-
-        return WebSearchResponseDTO.ok(results);
-    }
-    private String toJson(Object obj) {
-        try {
-            return objectMapper.writeValueAsString(obj);
-        } catch (Exception e) {
-            return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
-        }
-    }
-    private String handleHttpClientError(
-            org.springframework.web.client.HttpClientErrorException e) {
-
-        int status = e.getStatusCode().value();
-        String body = e.getResponseBodyAsString();
-
-        return switch (status) {
-            case 400 -> buildError("请求参数错误(400): " + body);
-            case 401 -> buildError("API Key 无效或未授权(401)");
-            case 403 -> buildError("访问被拒绝(403)");
-            case 429 -> buildError("请求过于频繁，请稍后再试(429)");
-            default  -> buildError("HTTP 错误 " + status + ": " + body);
-        };
-    }
-    private String buildError(String message) {
-        ObjectNode errorNode = objectMapper.createObjectNode();
-        errorNode.put("success", false);
-        errorNode.put("error", message);
-        return errorNode.toPrettyString();
+        return sb.toString();
     }
 }

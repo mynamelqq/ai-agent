@@ -1,6 +1,5 @@
 package com.ai.aigent.entity.VO;
 
-import com.ai.aigent.entity.AiAttachment;
 import lombok.Data;
 
 import java.time.LocalDateTime;
