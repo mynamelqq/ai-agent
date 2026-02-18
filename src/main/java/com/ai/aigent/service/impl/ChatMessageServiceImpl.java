@@ -1,6 +1,7 @@
 package com.ai.aigent.service.impl;
 
 import com.ai.aigent.entity.ChatMessage;
+import com.ai.aigent.entity.dto.ChatSendReq;
 import com.ai.aigent.mapper.ChatMessageMapper;
 import com.ai.aigent.service.ChatMessageService;
 import com.ai.aigent.utils.KryoUtils;
@@ -27,17 +28,21 @@ import java.util.List;
 public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatMessage>
     implements ChatMessageService {
     @Override
-    public void saveAssistantMessage(String conversationId, String message) {
-        AssistantMessage build = AssistantMessage.builder().content(message).build();
-        ChatMessage entity = new ChatMessage();
+    public void saveAssistantMessage(String conversationId, String message, Integer token,Integer cost) {
+            AssistantMessage build = AssistantMessage.builder().content(message).build();
+            ChatMessage entity = new ChatMessage();
             entity.setConversationId(conversationId);
             entity.setCreateTime(LocalDateTime.now());
             entity.setPayload(KryoUtils.serialize(build));
-            entity.setIsDeleted(0);
+            entity.setIsDeleted(0);entity.setToken(token);entity.setCost(cost);
+            entity.setIsImage(false);
+            entity.setIsGenerate(false);
+            entity.setIsThinking(false);
+            entity.setIsEcharts(false);
+            entity.setIsSearch(false);
             entity.setMessageType("assistant");
             this.save(entity);
     }
-
     @Override
     public void updateMessage(String conversationId, String message, String messageId, String type) {
         if(type=="user"){
@@ -52,14 +57,19 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     }
 
     @Override
-    public void saveMessage(String conversationId, Message message,String messageId) {
+    public void saveMessage(ChatSendReq chatSendReq) {
             ChatMessage entity = new ChatMessage();
-            entity.setConversationId(conversationId);
+            entity.setConversationId(chatSendReq.getChatId());
             entity.setCreateTime(LocalDateTime.now());
-            entity.setId(Long.parseLong(messageId));
-            entity.setPayload(KryoUtils.serialize(message));
-            entity.setIsDeleted(0);
-            entity.setMessageType(message.getMessageType().getValue());
+            entity.setId(Long.parseLong(chatSendReq.getMessageId()));
+            entity.setPayload(KryoUtils.serialize(new UserMessage(chatSendReq.getMessage())));
+            entity.setIsDeleted(0);entity.setToken(0);
+            entity.setIsEcharts(chatSendReq.getIsEcharts());
+            entity.setIsSearch(chatSendReq.getIsSearch());
+            entity.setIsImage(chatSendReq.getIsImageGen());
+            entity.setIsThinking(chatSendReq.getIsThinking());
+            entity.setIsGenerate(chatSendReq.getIsGenerateFile());
+            entity.setMessageType("user");
             this.save(entity);
     }
     @Override

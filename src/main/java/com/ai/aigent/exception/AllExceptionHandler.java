@@ -167,8 +167,6 @@ public class AllExceptionHandler  {
     public Result<Void> handleException(
             Exception e, HttpServletRequest request) {
 
-        log.error("系统异常: {} - URL: {}", e.getMessage(), request.getRequestURI(), e);
-
         return Result.error(500, "系统内部错误，请联系管理员");
     }
 }

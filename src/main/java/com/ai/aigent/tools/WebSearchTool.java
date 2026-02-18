@@ -17,6 +17,7 @@ public class WebSearchTool {
     @Tool(
         name = "bocha_web_search",
         description = "从博查AI搜索网页信息，返回网页标题、摘要和链接"
+        ,returnDirect = false
     )
     public String webSearch(
             @ToolParam(description = "搜索关键词，例如：阿里巴巴2024年ESG报告")
@@ -28,29 +29,38 @@ public class WebSearchTool {
             @ToolParam(description = "返回条数，1-20")
             Integer count
     ) {
-        BochaWebSearchRequest req = new BochaWebSearchRequest();
-        req.setQuery(query);
-        if (freshness != null) req.setFreshness(freshness);
-        if (summary != null) req.setSummary(summary);
-        if (count != null) req.setCount(count);
-        BochaWebSearchResponse resp = client.search(req);
-        if (resp == null || resp.getData() == null
-                || resp.getData().getWebPages() == null
-                || CollectionUtils.isEmpty(resp.getData().getWebPages().getValue())) {
-            return "未搜索到相关结果。";
+        try {
+             BochaWebSearchRequest req = new BochaWebSearchRequest();
+            req.setQuery(query);
+            if (freshness != null) req.setFreshness(freshness);
+            if (summary != null) req.setSummary(summary);
+            if (count != null) req.setCount(count);
+            BochaWebSearchResponse resp = client.search(req);
+            if (resp == null || resp.getData() == null
+                    || resp.getData().getWebPages() == null
+                    || CollectionUtils.isEmpty(resp.getData().getWebPages().getValue())) {
+                return "未搜索到相关结果。";
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("搜索结果：\n\n");
+            int i = 1;
+            for (BochaWebSearchResponse.WebPageValue v : resp.getData().getWebPages().getValue()) {
+                sb.append(i++).append(". ").append(v.getName()).append("\n")
+                  .append("   来源：").append(v.getSiteName()).append("\n")
+                  .append("   链接：").append(v.getUrl()).append("\n")
+                  .append("   摘要：")
+                  .append(v.getSummary() != null ? v.getSummary() : v.getSnippet())
+                  .append("\n\n");
+            }
+            return sb.toString();
         }
-        StringBuilder sb = new StringBuilder();
-        sb.append("搜索结果：\n\n");
-        int i = 1;
-        for (BochaWebSearchResponse.WebPageValue v : resp.getData().getWebPages().getValue()) {
-            sb.append(i++).append(". ").append(v.getName()).append("\n")
-              .append("   来源：").append(v.getSiteName()).append("\n")
-              .append("   链接：").append(v.getUrl()).append("\n")
-              .append("   摘要：")
-              .append(v.getSummary() != null ? v.getSummary() : v.getSnippet())
-              .append("\n\n");
+        catch (Exception e)
+        {
+            e.printStackTrace();
+            return "搜索工具调用失败";
         }
 
-        return sb.toString();
+
+
     }
 }

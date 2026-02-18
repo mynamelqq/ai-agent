@@ -17,4 +17,5 @@ public class ChatSendReq {
     private Boolean isImageGen;
     private Boolean isSearch;
     private Boolean isGenerateFile;
+    private Boolean isEcharts;
 }

@@ -51,6 +51,10 @@ public class UploadController {
     public Map<String, Object> getUploadSign(@RequestParam String suffix) {
         return cosUploadService.createUploadSign(suffix);
     }
+    @GetMapping("/sign/avatar")
+    public Map<String, Object> getUploadSignAvatar(@RequestParam String suffix) {
+        return cosUploadService.createUploadAvatarSign(suffix);
+    }
     @Autowired
     private COSClient  cosClient;
 

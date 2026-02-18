@@ -1,5 +1,6 @@
 package com.ai.aigent.utils;
 
+import com.ai.aigent.AiCientConstans;
 import com.ai.aigent.demo.image.VisionPerception;
 import com.ai.aigent.entity.AiAttachment;
 import com.qcloud.cos.COSClient;
@@ -37,34 +38,42 @@ public class AttachmentReaderUtil {
     private VectorStore attachmentVectorStore;
     @Autowired
     private VisionPerception visionPerception;
-      public static List<String> split(String text, int chunkSize, int overlap) {
-            List<String> chunks = new ArrayList<>();
-            int start = 0;
-            while (start < text.length()) {
-                int end = Math.min(start + chunkSize, text.length());
-                chunks.add(text.substring(start, end));
-                start = end - overlap;
-                if (start < 0) start = 0;
-            }
-            return chunks;
+  public static List<String> split(String text, int chunkSize, int overlap) {
+        List<String> chunks = new ArrayList<>();
+        int start = 0;
+        while (start < text.length()) {
+            int end = Math.min(start + chunkSize, text.length());
+            chunks.add(text.substring(start, end));
+            start = end - overlap;
+            if (start < 0) start = 0;
         }
+        return chunks;
+    }
+    public COSObject getObject(String bucketName, String url) {
+        String key = url.substring(url.indexOf(AiCientConstans.suffix_url) + AiCientConstans.suffix_url.length());
+        return cosClient.getObject(bucketName, key);
+    }
     public String readContent(AiAttachment attachment, String messageId, String chatId, String text) {
         String url = attachment.getFileUrl();
-        String s = ".myqcloud.com/";
-        String key = url.substring(url.indexOf(s) + s.length());
+        String key = url.substring(url.indexOf(AiCientConstans.suffix_url) + AiCientConstans.suffix_url.length());
         String fileType = attachment.getFileType();
         Long fileSize = attachment.getFileSize();
-
         if (fileType.startsWith("image/")) {
+            COSObject object = getObject(AiCientConstans.bulk, key);
             try {
                 return "User uploaded file: "+attachment.getFileName()+". Here are its contents:\n"+visionPerception.getVisionDescription(url);
             } catch (Exception e) {
                 return e.getMessage();
             }
         }
+        else if(fileType.startsWith("audio/")){
+
+        }
+
         // ✅ 小文件：直接读取全文
         if (fileSize < SMALL_FILE_LIMIT) {
             COSObject object = cosClient.getObject("efrewew-1402637531", key);
+
             try (InputStream is = object.getObjectContent()) {
 //                long contentLength = object.getObjectMetadata().getContentLength();
                 return "User uploaded file: "+attachment.getFileName()+". Here are its contents:\n"+readContentByContentType(is, fileType);

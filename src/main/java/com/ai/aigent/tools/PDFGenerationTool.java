@@ -8,9 +8,6 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
-import org.springframework.ai.tool.definition.DefaultToolDefinition;
-import org.springframework.ai.tool.definition.ToolDefinition;
-import org.springframework.ai.tool.execution.ToolExecutionException;
 
 import java.io.InputStream;
 import java.nio.file.Path;
@@ -60,12 +57,13 @@ public String generatePDF(
             return outputPath.toString();
 
         } catch (Exception e) {
-            ToolDefinition tool = DefaultToolDefinition.builder()
-        .name("generate_pdf")
-        .description("生成 PDF 文件失败")
-        .inputSchema("schema")
-        .build();
-            throw new ToolExecutionException(tool,e);
+            return "生成pdf工具调用失败";
+//            ToolDefinition tool = DefaultToolDefinition.builder()
+//            .name("generate_pdf")
+//            .description("生成 PDF 文件失败")
+//            .inputSchema("schema")
+//            .build();
+//            throw new ToolExecutionException(tool,e);
         }
     }
     public static String stripNonBmp(String text) {

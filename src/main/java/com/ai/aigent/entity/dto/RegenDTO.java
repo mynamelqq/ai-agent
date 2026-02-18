@@ -7,5 +7,4 @@ public class RegenDTO {
     private String assistantMessageId;
     private String userMessageId;
     private String token;
-    private Boolean isThinking;
 }

@@ -27,13 +27,10 @@ public String fetchWebPage(
 
             // 1️⃣ 移除无关元素
             doc.select("script, style, noscript, iframe, header, footer, nav").remove();
-
             // 2️⃣ 抽取正文（优先 main / article）
             String text = extractMainContent(doc);
-
             // 3️⃣ 清洗文本
             text = normalizeText(text);
-
             // 4️⃣ 限制长度（防止 token 爆炸）
             int MAX_CHARS = 3000;
             if (text.length() > MAX_CHARS) {

@@ -34,5 +34,12 @@ public class ChatMessage {
     @TableField(typeHandler = ByteArrayTypeHandler.class)
     private byte[] payload;
     private Integer isDeleted;
+    private Boolean isThinking;
+    private Boolean isImage;
+    private Boolean isGenerate;
+    private Boolean isEcharts;
+    private Integer cost;
+    private Integer token;
+    private Boolean isSearch;
     private LocalDateTime createTime;
 }

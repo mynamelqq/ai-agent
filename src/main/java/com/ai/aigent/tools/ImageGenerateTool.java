@@ -22,21 +22,24 @@ public class ImageGenerateTool {
     public String generateImage(
             @ToolParam(description = "图片生成提示词，可适当优化用户的提示词生成更精确的图片") String description
     , ToolContext context) {
-        ImageResponse response = zhiPuAiImageModel.call(
+        try {
+             ImageResponse response = zhiPuAiImageModel.call(
                 new ImagePrompt(
                         description,
                         ZhiPuAiImageOptions.builder()
                                 .model("glm-image")
-                                .build()
-                )
-        );
-
-        String str=String.format("![图片](%s \"按照提示词生成的图片\")",
-        response.getResult().getOutput().getUrl()
-);
-        String chatId = context.getContext().get("chatId").toString();
-        chatMessageService.saveAssistantMessage(chatId,str);
-
-        return str;
+                                .build()         )
+                );
+                       String str=String.format("![图片](%s \"按照提示词生成的图片\")",
+                    response.getResult().getOutput().getUrl()
+            );
+            String chatId = context.getContext().get("chatId").toString();
+            chatMessageService.saveAssistantMessage(chatId,str,0,0);
+            return str;
+        }
+        catch (Exception e)
+        {
+            return "生成图片工具调用失败";
+        }
     }
 }

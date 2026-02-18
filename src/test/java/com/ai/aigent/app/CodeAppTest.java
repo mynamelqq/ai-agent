@@ -74,7 +74,7 @@ class CodeAppTest {
     @Test
     void doChatWithMcp() {
         String id= UUID.randomUUID().toString();
-        String s = codeApp.doChatWithMcp("帮我搜索一些电脑的图片", id);
+        String s = codeApp.doChatWithMcp("现在几点", id);
         System.out.println(s);
     }
 }

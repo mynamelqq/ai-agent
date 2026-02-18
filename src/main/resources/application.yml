@@ -21,24 +21,15 @@ spring:
   profiles:
     active: local
   ai:
-#    mcp:
-#      client:
+    mcp:
+      client:
 #        sse:
 #          connections:
 #            server1:
 #              url: http://localhost:8127
-#        stdio:
-#          servers-configuration: classpath:mcp-githubTool.json
+        stdio:
+          servers-configuration: classpath:mcp-githubTool.json
 
-
-    vectors tore:
-      pgvector:
-
-    ollama:
-      chat:
-        model: deepseek-r1:7b
-
-      base-url: http://localhost:11434
 
 
 springdoc:
@@ -71,15 +62,5 @@ mybatis-plus:
 logging:
   level:
     org.springframework.ai: DEBUG
-cos:
-  secret-id: AKIDz4zhA2lIbr8IG0NjxxqX0FG4dyGm9JJw
-  secret-key: Yu3Fk4Nbluwt7E8oIYbPzKSL0TjlbJo5
-  bucket: efrewew-1402637531
-  domain: https://efrewew-1402637531.cos.ap-nanjing.myqcloud.com
-  region: ap-nanjing
-  upload:
-    max-size: 10485760   #10MB
-    # 预签名URL过期时间（秒）
-    presign-expiry: 3600
-  role-arn: qcs::cam::uin/100046213466:roleName/efrewew
+
 

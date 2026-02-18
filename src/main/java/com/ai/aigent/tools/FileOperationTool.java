@@ -1,18 +1,19 @@
 package com.ai.aigent.tools;
 
-import cn.hutool.core.io.FileUtil;
 import com.ai.aigent.constant.FileConstant;
 import com.qcloud.cos.COSClient;
 import com.qcloud.cos.model.ObjectMetadata;
 import com.qcloud.cos.model.PutObjectRequest;
-import org.apache.commons.io.FilenameUtils;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -36,7 +37,7 @@ public class FileOperationTool {
     private String bucket;
     @Autowired
     private COSClient cosClient;
-    @Tool(description = "将内容写入指定文本文件，并返回下载URL,如果文件长度超过100KB则不调用工具.")
+    @Tool(description = "将内容写入指定文本文件，并返回下载URL,如果文件长度超过100KB则不调用工具.",returnDirect = false)
     public String writeFile(
             @ToolParam(description = "文件名") String fileName,
             @ToolParam(description = "文件后缀,例:txt,md,json") String fileType,

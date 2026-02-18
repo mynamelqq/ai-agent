@@ -15,7 +15,7 @@ public class ChatMessageVO {
     private String messageType;
     private String payload;
     List<AttachmentVO>aiAttachments;
-
+    private Integer cost;
 
 
     private LocalDateTime createTime;

@@ -76,7 +76,7 @@ public class TerminalOpTool {
             );
 
         } catch (Exception e) {
-            return toJson(
+            return "终端工具执行失败:"+toJson(
                     TerminalExecResponseDTO.error(command, e.getMessage(),ExecErrorType.UNKNOWN)
             );
         }

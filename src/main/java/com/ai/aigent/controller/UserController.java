@@ -32,19 +32,20 @@ public class UserController {
     public Result<?> register(@RequestBody Map<String, String> body) {
         String email = body.get("email");
         String password = body.get("password");
+        String avatarUrl = body.get("avatar_url");
+        String nickName=body.get("nick_name");
         Users users=usersMapper.selectById(email);
         if (users!=null) {
             throw new RuntimeException("用户名已被注册");
         }
-
         Users user = new Users();
+        user.setAvatarUrl(avatarUrl);
+        user.setNickname(nickName);
         user.setUsername(email);
         user.setId(UUID.randomUUID().getMostSignificantBits());
         user.setPassword(password);
         user.setCreated_at(LocalDateTime.now());
         usersMapper.insert(user);
-
-        String token = JWTUtils.createUserToken(user.getId().toString(),user.getUsername());
         return Result.success();
     }
 

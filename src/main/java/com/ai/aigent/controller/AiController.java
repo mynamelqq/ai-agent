@@ -3,10 +3,15 @@ package com.ai.aigent.controller;
 import com.ai.aigent.app.CodeApp;
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.Conversation;
+import com.ai.aigent.entity.VO.ChatResult;
 import com.ai.aigent.entity.dto.ChatSendReq;
+import com.ai.aigent.entity.dto.ReadReq;
+import com.ai.aigent.entity.dto.RegenDTO;
 import com.ai.aigent.service.AiAttachmentService;
 import com.ai.aigent.service.ConversationService;
+import com.ai.aigent.utils.CosyVoiceTtsService;
 import com.ai.aigent.utils.JWTUtils;
+import com.ai.aigent.utils.OcrService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.ai.chat.model.ChatModel;
@@ -16,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 
 import java.time.LocalDateTime;
@@ -37,15 +43,15 @@ public class AiController {
     private ConversationService conversationService;
 
     @PostMapping(value = "/chat/async/", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ChatResponse> doChatWithAppAsync(@RequestBody ChatSendReq chatSendReq)
+    public Flux<ChatResult> doChatWithAppAsync(@RequestBody ChatSendReq chatSendReq)
     {
         String token = chatSendReq.getToken();
         conversationService.lambdaUpdate()
         .setSql("updated_at = now()")
         .eq(Conversation::getId, chatSendReq.getChatId())
         .update();
-        if(token!=null&&JWTUtils.validateToken(token.toString())){
-            String J = JWTUtils.getUserId(token.toString());
+        if(token!=null&&JWTUtils.validateToken(token)){
+            String J = JWTUtils.getUserId(token);
             return codeApp.doChatStream(chatSendReq,J);
         }
         return codeApp.doChatStream(chatSendReq,"");
@@ -55,15 +61,15 @@ public class AiController {
     {
         return codeApp.doChatStreamBlank(chatSendReq);
     }
-//    @PostMapping(value = "/chat/regenerate",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-//    public Flux<ChatResponse> regenerate(ChatSendReq chatSendReq,HttpServletRequest request)
-//    {
-//         Object token = request.getHeader("Authorization");
-////         if(token!=null)return codeApp.doChatStreamRegenerate(chatSendReq,JWTUtils.getUserId(token.toString()));
-//        return codeApp.doChatStreamRegenerate(chatSendReq,"");
-//    }
+    @PostMapping(value = "/chat/regenerate",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ChatResponse> regenerate(RegenDTO regenDTO, HttpServletRequest request)
+    {
+         Object token = request.getHeader("Authorization");
+         if(token!=null)return codeApp.doChatStreamRegenerate(regenDTO,JWTUtils.getUserId(token.toString()));
+        return codeApp.doChatStreamRegenerate(regenDTO,"");
+    }
 
-    //    @GetMapping("/manus/chat")
+//        @GetMapping("/manus/chat")
 //    public SseEmitter doChatWithManus(String message)
 //    {
 //        manus=new Manus(toolCallBacks,dashscopeChatModel);
@@ -91,14 +97,25 @@ public class AiController {
         }
         return Result.success(Map.of("title",s));
     }
+    @PostMapping("/ocr")
+    public Result<String> getOcr(MultipartFile multipartFile)
+    {
+        try {
+            String ocr = OcrService.ocr(multipartFile);
+            return Result.success(ocr);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+    @Autowired
+    private CosyVoiceTtsService ttsService;
+    @PostMapping("/read")
+    public void read(@RequestBody ReadReq req) {
+        ttsService.readText(req.getText(), req.getSessionId());
+    }
+    @PostMapping("/stop")
+    public void stop(@RequestBody ReadReq req) {
+        ttsService.stop(req.getSessionId());
+    }
 
-
-
-//    @GetMapping(value = "/love/chat/async/",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-//    public Flux<ServerSentEvent<String>> doChatWithAppAsyncServer(String ChatId, String message)
-//    {
-//        return codeApp.doChatStream(message,ChatId)
-//                .map(chunk-> ServerSentEvent.<String>builder().data(chunk).build());
-//
-//    }
 }

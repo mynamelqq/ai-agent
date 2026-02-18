@@ -4,9 +4,7 @@ import jakarta.annotation.Resource;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.stereotype.Component;
 
-@Component
 public class OpenAISpringAI implements CommandLineRunner {
     @Resource
     @Qualifier("openAiChatModel")
@@ -20,7 +18,7 @@ public class OpenAISpringAI implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-         System.out.println(openAiChatModel.call("你是?"));
+//         System.out.println(openAiChatModel.call("你是?"));
 ////      System.out.println(modelScopeClient.chat("你是谁？"));
 //        Prompt prompt = new Prompt("你是谁？");
 ////        System.out.println(modelScopeClient.chat("你是谁？"));

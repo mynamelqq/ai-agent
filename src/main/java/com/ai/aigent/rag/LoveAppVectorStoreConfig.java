@@ -1,7 +1,7 @@
 package com.ai.aigent.rag;
 
+import com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingModel;
 import jakarta.annotation.Resource;
-import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -22,7 +22,7 @@ public class LoveAppVectorStoreConfig {
     public VectorStore loveAppVectorStore(
 
             @Qualifier("postgresqlJdbcTemplate") JdbcTemplate jdbcTemplate,
-             @Qualifier("ollamaEmbeddingModel") EmbeddingModel embeddingModel
+             DashScopeEmbeddingModel embeddingModel
    ) throws IOException {
        PgVectorStore build = PgVectorStore.builder(jdbcTemplate, embeddingModel)
                .dimensions(768)

@@ -1,6 +1,7 @@
 package com.ai.aigent.service;
 
 import com.ai.aigent.entity.ChatMessage;
+import com.ai.aigent.entity.dto.ChatSendReq;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.springframework.ai.chat.messages.Message;
 
@@ -14,9 +15,9 @@ import java.util.List;
 
 public interface ChatMessageService extends IService<ChatMessage> {
 
-     void saveAssistantMessage(String conversationId,String message);
+     void saveAssistantMessage(String conversationId,String message,Integer token,Integer cost);
      void updateMessage(String conversationId,String message,String messageId,String type);
-     void saveMessage(String conversationId, Message message,String messageId);
+     void saveMessage(ChatSendReq chatSendReq);
      void saveMessages(String conversationId, List<Message> messages);
      List<Message> loadRecentMessages(String conversationId, int lastN);
      long countByConversationId(String conversationId);
