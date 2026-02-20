@@ -22,7 +22,7 @@ public enum ResultCodeEnum {
     TOKEN_EXPIRED(1007, "Token已过期"),
     REFRESH_TOKEN_INVALID(1008, "刷新Token无效"),
     PERMISSION_DENIED(1009, "权限不足"),
-
+    TOKEN_LIMIT_EXCEEDED(1010, "Token数量超限"),
     // 服务端错误 500-599
     INTERNAL_SERVER_ERROR(500, "服务器内部错误"),
     SERVICE_UNAVAILABLE(503, "服务不可用"),

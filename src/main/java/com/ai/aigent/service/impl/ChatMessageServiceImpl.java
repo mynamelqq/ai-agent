@@ -1,6 +1,6 @@
 package com.ai.aigent.service.impl;
 
-import com.ai.aigent.entity.ChatMessage;
+import com.ai.aigent.entity.domin.ChatMessage;
 import com.ai.aigent.entity.dto.ChatSendReq;
 import com.ai.aigent.mapper.ChatMessageMapper;
 import com.ai.aigent.service.ChatMessageService;

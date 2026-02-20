@@ -7,10 +7,10 @@ import java.time.LocalDateTime;
 @Data
 public class UserVo {
     private String username;
-    private Long id;
-    private String avatar_url;
+    private String id;
+    private String avatarUrl;
     private String nickname;
-    private LocalDateTime last_login_at;
-    private LocalDateTime created_at;
+    private LocalDateTime lastLoginAt;
+    private LocalDateTime createdAt;
     private String token;
 }

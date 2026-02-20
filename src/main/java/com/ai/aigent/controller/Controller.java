@@ -2,30 +2,39 @@ package com.ai.aigent.controller;
 
 import cn.hutool.core.bean.BeanUtil;
 import com.ai.aigent.constant.AiCientConstans;
+import com.ai.aigent.constant.ExecErrorType;
 import com.ai.aigent.constant.Result;
-import com.ai.aigent.entity.AiAttachment;
-import com.ai.aigent.entity.ChatMessage;
-import com.ai.aigent.entity.ChatSummary;
-import com.ai.aigent.entity.Conversation;
 import com.ai.aigent.entity.VO.AttachmentVO;
 import com.ai.aigent.entity.VO.ChatMessageVO;
+import com.ai.aigent.entity.domin.AiAttachment;
+import com.ai.aigent.entity.domin.ChatMessage;
+import com.ai.aigent.entity.domin.ChatSummary;
+import com.ai.aigent.entity.domin.Conversation;
+import com.ai.aigent.exception.BusinessException;
 import com.ai.aigent.service.AiAttachmentService;
 import com.ai.aigent.service.ChatMessageService;
 import com.ai.aigent.service.ChatSummaryService;
 import com.ai.aigent.service.ConversationService;
 import com.ai.aigent.utils.JWTUtils;
+import com.ai.aigent.utils.KryoUtils;
+import com.ai.aigent.utils.PdfExportUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -147,6 +156,49 @@ public class Controller {
                 .eq(Conversation::getId, ChatId));
         chatSummaryService.remove(new LambdaQueryWrapper<ChatSummary>().eq(ChatSummary::getConversationId, ChatId));
         return Result.success("删除成功");
+    }
+  @GetMapping("/export/{messageId}")
+    public ResponseEntity<byte[]> export(
+            @PathVariable Long messageId,
+            @RequestParam(defaultValue = "txt") String format) {
+
+        ChatMessage chatMessage = chatMessageService.getById(messageId);
+        if(chatMessage==null){
+            throw new RuntimeException("会话不存在");
+        }
+        byte[] payload = chatMessage.getPayload();
+        AssistantMessage assistantMessage = KryoUtils.deserialize(payload);
+        String text = assistantMessage.getText();
+        // 2️⃣ 根据格式生成文件
+        byte[] fileBytes;
+        String fileName;
+        String contentType;
+        if(text.isEmpty()){
+            throw new BusinessException(ExecErrorType.NONE.ordinal(),"会话内容为空");
+        }
+        switch (format.toLowerCase()) {
+            case "pdf":
+                fileBytes = PdfExportUtil.toPdf(text);
+                fileName = "answer.pdf";
+                contentType = "application/pdf";
+                break;
+
+            case "md":
+                fileBytes = text.getBytes(StandardCharsets.UTF_8);
+                fileName = "answer.md";
+                contentType = "text/markdown";
+                break;
+
+            default:
+                fileBytes = text.getBytes(StandardCharsets.UTF_8);
+                fileName = "answer.txt";
+                contentType = "text/plain";
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=" +messageId +"-"+ fileName)
+                .contentType(MediaType.parseMediaType(contentType))
+                .body(fileBytes);
     }
     @Transactional
     @PostMapping("/chat/rename")

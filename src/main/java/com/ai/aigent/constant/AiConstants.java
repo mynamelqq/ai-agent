@@ -1,6 +1,6 @@
-package com.ai.aigent;
+package com.ai.aigent.constant;
 
-public interface AiCientConstans
+public interface AiConstants
 {
     public static final Integer SHORT_MEMORY_LENGTH = 8;
     public static final String bulk="efrewew-1402637531";

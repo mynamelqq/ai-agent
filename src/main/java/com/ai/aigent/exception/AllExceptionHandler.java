@@ -1,6 +1,7 @@
 package com.ai.aigent.exception;
 
 import com.ai.aigent.constant.Result;
+import com.ai.aigent.constant.ResultCodeEnum;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
@@ -109,7 +110,11 @@ public class AllExceptionHandler  {
 
         return Result.error(404, "请求的资源不存在");
     }
-
+    @ExceptionHandler(TokenLimitExceed.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<Void> handleTokenLimitExceed(TokenLimitExceed e, HttpServletRequest request) {
+        return Result.error(ResultCodeEnum.TOKEN_LIMIT_EXCEEDED.getCode(), "Token限制超出");
+    }
     /**
      * 处理JWT认证异常
      */

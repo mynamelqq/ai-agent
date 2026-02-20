@@ -1,7 +1,7 @@
 package com.ai.aigent.consumer;
 
 import com.ai.aigent.constant.AiCientConstans;
-import com.ai.aigent.entity.ChatMessage;
+import com.ai.aigent.entity.domin.ChatMessage;
 import com.ai.aigent.service.ChatMessageService;
 import com.ai.aigent.service.ChatSummaryService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;

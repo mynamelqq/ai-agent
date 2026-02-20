@@ -1,7 +1,7 @@
 package com.ai.aigent.utils;
 
 
-import com.ai.aigent.entity.ToolContext;
+import com.ai.aigent.entity.domin.ToolContext;
 
 public class ToolContextHolder {
     private static final ThreadLocal<ToolContext> CTX = new ThreadLocal<>();

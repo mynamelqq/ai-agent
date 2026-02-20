@@ -1,4 +1,4 @@
-package com.ai.aigent.entity;
+package com.ai.aigent.entity.domin;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

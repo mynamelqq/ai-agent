@@ -1,6 +1,6 @@
 package com.ai.aigent.service.impl;
 
-import com.ai.aigent.entity.Users;
+import com.ai.aigent.entity.domin.Users;
 import com.ai.aigent.mapper.UsersMapper;
 import com.ai.aigent.service.UsersService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;

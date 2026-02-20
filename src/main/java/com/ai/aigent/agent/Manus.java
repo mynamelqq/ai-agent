@@ -3,19 +3,24 @@ package com.ai.aigent.agent;
 
 
 import com.ai.aigent.advisor.MySimpleLoggerAdvisor;
+import com.ai.aigent.service.AgentMessageService;
+import com.ai.aigent.service.AgentSessionService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
 @Component
+@Scope("prototype")  // 每次注入/获取都是新实例
 public class Manus extends ToolCallAgent{
-    public Manus(ToolCallback[] availableTools,@Qualifier("dashScopeChatModel") ChatModel dashscopeChatModel) {
+    public Manus(ToolCallback[] availableTools, @Qualifier("dashScopeChatModel") ChatModel dashscopeChatModel
+            , AgentSessionService agentSessionService, AgentMessageService agentMessageService) {
         super(availableTools);
         this.setName("Manus");
         String SYSTEM_PROMPT = """
-        You are YuManus, an all-capable AI assistant, aimed at solving any task presented by the user.
+        You are Manus, an all-capable AI assistant, aimed at solving any task presented by the user.
         You have various tools at your disposal that you can call upon to efficiently complete complex requests.
         """;
         this.setSystemPrompt(SYSTEM_PROMPT);
@@ -27,7 +32,10 @@ public class Manus extends ToolCallAgent{
         """;
         this.setNextStepPrompt(NEXT_STEP_PROMPT);
         this.setMaxStep(20);
-        ChatClient client=ChatClient.builder(dashscopeChatModel).defaultAdvisors(new MySimpleLoggerAdvisor())
+        this.setAgentMessageService(agentMessageService);
+        this.setAgentSessionService(agentSessionService);
+        ChatClient client=ChatClient.builder(dashscopeChatModel)
+                .defaultAdvisors(new MySimpleLoggerAdvisor())
                 .build();
         this.setChatClient(client);
 

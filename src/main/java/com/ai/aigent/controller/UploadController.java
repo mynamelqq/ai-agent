@@ -2,7 +2,7 @@ package com.ai.aigent.controller;
 
 
 import com.ai.aigent.constant.Result;
-import com.ai.aigent.entity.AiAttachment;
+import com.ai.aigent.entity.domin.AiAttachment;
 import com.ai.aigent.entity.dto.UploadFileDTO;
 import com.ai.aigent.service.AiAttachmentService;
 import com.ai.aigent.service.impl.CosUploadService;

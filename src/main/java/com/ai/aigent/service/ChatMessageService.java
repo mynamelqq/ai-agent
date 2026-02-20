@@ -1,6 +1,6 @@
 package com.ai.aigent.service;
 
-import com.ai.aigent.entity.ChatMessage;
+import com.ai.aigent.entity.domin.ChatMessage;
 import com.ai.aigent.entity.dto.ChatSendReq;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.springframework.ai.chat.messages.Message;

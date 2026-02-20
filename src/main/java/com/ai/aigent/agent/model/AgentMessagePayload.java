@@ -1,0 +1,31 @@
+package com.ai.aigent.agent.model;
+
+import com.ai.aigent.entity.domin.AgentMessage;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+
+import java.util.Date;
+import java.util.List;
+@Data
+public class AgentMessagePayload {
+    private String role;          // user | assistant | tool
+    private String content;       // 正文
+    private String reasoning;     // 推理内容
+    private List<ToolCallRecord> toolCalls;
+    @Data
+    @AllArgsConstructor
+    public static class ToolCallRecord {
+        private String toolName;
+        private String args;
+        private String result;
+    }
+    private void saveAgentMessage(Long sessionId, AgentMessage payload, int tokens) {
+        AgentMessage msg = new AgentMessage();
+        msg.setSessionId(sessionId);
+        msg.setType(payload.getType());
+        msg.setTokens(tokens);
+        msg.setCreatedAt(new Date());
+//        msg.setPayload(JSON(payload)); // byte[]
+//        agentMessageMapper.insert(msg);
+    }
+}

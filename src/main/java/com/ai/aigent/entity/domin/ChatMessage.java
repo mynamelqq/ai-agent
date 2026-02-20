@@ -1,4 +1,4 @@
-package com.ai.aigent.entity;
+package com.ai.aigent.entity.domin;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -15,7 +15,6 @@ import java.time.LocalDateTime;
  */
 @TableName(value ="chat_message")
 @Data
-
 public class ChatMessage {
     /**
      * 
@@ -39,6 +38,9 @@ public class ChatMessage {
     private Boolean isGenerate;
     private Boolean isEcharts;
     private Integer cost;
+    private Integer promptTokens;
+    private Integer cachedTokens;
+    private Integer completionTokens;
     private Integer token;
     private Boolean isSearch;
     private LocalDateTime createTime;

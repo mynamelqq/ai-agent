@@ -1,6 +1,6 @@
 package com.ai.aigent.service.impl;
 
-import com.ai.aigent.entity.ChatSummary;
+import com.ai.aigent.entity.domin.ChatSummary;
 import com.ai.aigent.mapper.ChatSummaryMapper;
 import com.ai.aigent.service.ChatSummaryService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;

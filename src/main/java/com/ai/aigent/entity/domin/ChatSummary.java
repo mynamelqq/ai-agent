@@ -1,4 +1,4 @@
-package com.ai.aigent.entity;
+package com.ai.aigent.entity.domin;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;

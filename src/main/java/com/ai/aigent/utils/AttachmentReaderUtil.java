@@ -1,8 +1,8 @@
 package com.ai.aigent.utils;
 
-import com.ai.aigent.AiCientConstans;
+import com.ai.aigent.constant.AiConstants;
 import com.ai.aigent.demo.image.VisionPerception;
-import com.ai.aigent.entity.AiAttachment;
+import com.ai.aigent.entity.domin.AiAttachment;
 import com.qcloud.cos.COSClient;
 import com.qcloud.cos.model.COSObject;
 import jakarta.annotation.Resource;
@@ -50,16 +50,16 @@ public class AttachmentReaderUtil {
         return chunks;
     }
     public COSObject getObject(String bucketName, String url) {
-        String key = url.substring(url.indexOf(AiCientConstans.suffix_url) + AiCientConstans.suffix_url.length());
+        String key = url.substring(url.indexOf(AiConstants.suffix_url) + AiConstants.suffix_url.length());
         return cosClient.getObject(bucketName, key);
     }
     public String readContent(AiAttachment attachment, String messageId, String chatId, String text) {
         String url = attachment.getFileUrl();
-        String key = url.substring(url.indexOf(AiCientConstans.suffix_url) + AiCientConstans.suffix_url.length());
+        String key = url.substring(url.indexOf(AiConstants.suffix_url) + AiConstants.suffix_url.length());
         String fileType = attachment.getFileType();
         Long fileSize = attachment.getFileSize();
         if (fileType.startsWith("image/")) {
-            COSObject object = getObject(AiCientConstans.bulk, key);
+            COSObject object = getObject(AiConstants.bulk, key);
             try {
                 return "User uploaded file: "+attachment.getFileName()+". Here are its contents:\n"+visionPerception.getVisionDescription(url);
             } catch (Exception e) {
