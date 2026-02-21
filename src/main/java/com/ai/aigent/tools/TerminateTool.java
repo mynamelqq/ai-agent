@@ -8,7 +8,7 @@ public class TerminateTool {
             Terminate the interaction when the request is met oR if the assistant cannot proceed further with the task.
             "When you have finished all the tasks,call this tool to end the work.
             """)
-    public String doTeminateTool()
+    public String doTerminateTool()
     {
         return "任务结束";
     }

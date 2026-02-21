@@ -75,12 +75,6 @@ public class UploadController {
         String s = IdGenerator.createDefault().numericId(15);
         att.setId(Long.parseLong(s));
         attachmentService.save(att);
-        attachmentService.asyncEmbedding(att);
-        try {
-            Thread.sleep(150);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
         return Result.success(att.getId().toString());
     }
 

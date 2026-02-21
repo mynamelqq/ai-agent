@@ -1,0 +1,252 @@
+package com.ai.aigent.service.impl;
+
+import com.ai.aigent.constant.AiCientConstans;
+import com.ai.aigent.entity.domin.AiAttachment;
+import com.ai.aigent.entity.dto.UploadFileDTO;
+import com.ai.aigent.mapper.AiAttachmentMapper;
+import com.ai.aigent.service.AiAttachmentService;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.qcloud.cos.COSClient;
+import com.qcloud.cos.model.COSObject;
+import com.qcloud.cos.model.ObjectMetadata;
+import com.qcloud.cos.model.PutObjectRequest;
+import jakarta.annotation.Resource;
+import org.apache.commons.io.FilenameUtils;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xslf.usermodel.XMLSlideShow;
+import org.apache.poi.xslf.usermodel.XSLFShape;
+import org.apache.poi.xslf.usermodel.XSLFSlide;
+import org.apache.poi.xslf.usermodel.XSLFTextShape;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
+
+/**
+* @author MECHREVO
+* @description 针对表【ai_attachment】的数据库操作Service实现
+* @createDate 2026-02-04 22:50:40
+*/
+@Service
+public class AiAttachmentServiceImpl extends ServiceImpl<AiAttachmentMapper, AiAttachment>
+    implements AiAttachmentService{
+     @Value("${cos.bucket}")
+    private String bucket;
+     @Autowired
+    private COSClient cosClient;
+     @Autowired
+     private AiAttachmentMapper attachmentMapper;
+     @Resource
+    @Qualifier("attachmentVectorStore")
+    private VectorStore attachmentVectorStore;
+    public String uploadFile(MultipartFile file) throws IOException{
+        String ext = FilenameUtils.getExtension(file.getOriginalFilename());
+        String key = "chat/" + UUID.randomUUID() + "." + ext;
+        // 元数据
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentLength(file.getSize());
+        metadata.setContentType(file.getContentType());
+        PutObjectRequest request = new PutObjectRequest(bucket, key, file.getInputStream(), metadata);
+        cosClient.putObject(request);
+        String url = "https://" + bucket + ".cos." + cosClient.getClientConfig().getRegion().getRegionName() + ".myqcloud.com/" + key;
+        return url;
+    }
+
+     @Transactional
+     public AiAttachment uploadFileInChat(MultipartFile file, UploadFileDTO dto) throws IOException {
+
+        // 生成文件 key
+        String ext = FilenameUtils.getExtension(file.getOriginalFilename());
+        String key = "chat/" + UUID.randomUUID() + "." + ext;
+
+        // 元数据
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentLength(file.getSize());
+        metadata.setContentType(file.getContentType());
+        PutObjectRequest request = new PutObjectRequest(bucket, key, file.getInputStream(), metadata);
+        cosClient.putObject(request);
+        // 拼接 URL
+        String url = "https://" + bucket + ".cos." + cosClient.getClientConfig().getRegion().getRegionName() + ".myqcloud.com/" + key;
+        // 写入数据库
+        AiAttachment attachment = new AiAttachment();
+
+        attachment.setChatId(dto.getChat_id());
+        attachment.setFileName(file.getOriginalFilename());
+        attachment.setFileUrl(url);
+        attachment.setFileSize(file.getSize());
+        attachment.setFileType(file.getContentType());
+        attachment.setConservationId(dto.getConservation_id());
+        attachmentMapper.insert(attachment);
+        return attachment;
+    }
+     @Async
+    public void asyncEmbedding(AiAttachment att) {
+        String url = att.getFileUrl();
+            String s = ".myqcloud.com/";
+            String key = url.substring(url.indexOf(s) + s.length());
+            String fileType = att.getFileType();
+            Long fileSize=att.getFileSize();
+            COSObject object = cosClient.getObject("efrewew-1402637531", key);
+            try (InputStream is = object.getObjectContent()) {
+//                 while ( true){
+//
+//                 }
+//                TextDocumentParser parser = new TextDocumentParser();
+//                List<Document> documents = parser.parse(is);
+//                List<Document> chunkedDocs = new ArrayList<>();
+//                for (Document doc : documents) {
+//                    List<String> chunks = AttachmentReaderUtil.split(doc.getFormattedContent(), 2000, 100);
+//                    int idx = 0;
+//                    for (String chunk : chunks) {
+//                        Document d = new Document(att.getFileName()+"/n"+chunk);
+//                        Map<String, Object> meta = d.getMetadata();
+//                        meta.put("fileId", att.getId());
+//                        meta.put("chunkIndex", idx++);
+//                        chunkedDocs.add(d);
+//                    }
+//                }
+//                List<List<Document>> batches = ListUtil.partition(chunkedDocs, 50);
+//                    for (List<Document> batch : batches) {
+//                        attachmentVectorStore.add(batch);
+//                }
+
+
+        } catch (Exception e) {
+            throw new RuntimeException("读取 COS 文件失败: " + key, e);
+        }
+    }
+     private String readContentByContentType(InputStream is, String contentType) throws Exception {
+        contentType = contentType.toLowerCase();
+        if (contentType.startsWith("text/") ||
+            contentType.equals("application/json") ||
+            contentType.equals("application/xml") ||
+            contentType.equals("application/yaml") ||
+            contentType.equals("application/x-yaml") ||
+            contentType.equals("application/ld+json") ||
+            contentType.equals("application/rtf") ||
+            contentType.equals("application/javascript") ||
+            contentType.equals("application/typescript") ||
+            contentType.equals("application/sql") ||
+            contentType.equals("application/properties") ||
+            contentType.equals("application/java") ||
+            contentType.equals("application/python") ||
+            contentType.endsWith("+json") ||      // application/geo+json, application/vnd.api+json 等
+            contentType.endsWith("+xml")) {       // application/rss+xml, application/atom+xml 等
+            return readText(is);
+        }
+        // 2. PDF
+        if (contentType.equals("application/pdf") ||
+            contentType.equals("application/x-pdf")) {
+            return readPdf(is);
+        }
+        // 3. Word
+        if (contentType.contains("wordprocessingml") ||
+            contentType.equals("application/msword") ||
+            contentType.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document") ||
+            contentType.equals("application/vnd.ms-word")) {
+            return readDocx(is);
+        }
+        if (contentType.contains("spreadsheetml") ||
+            contentType.equals("application/vnd.ms-excel") ||
+            contentType.equals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") ||
+            contentType.equals("application/vnd.ms-excel.sheet.macroEnabled.12") ||
+            contentType.equals("application/vnd.ms-excel.sheet.binary.macroEnabled.12")) {
+            return readExcel(is);
+        }
+        return readText(is);
+    }
+    private String readText(InputStream is) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+            char[] buf = new char[8192];
+            int read;
+            while ((read = reader.read(buf)) != -1) {
+                sb.append(buf, 0, read);
+                if (sb.length() >= AiCientConstans.MAX_LENGTH_EMBEDDING) break;
+            }
+        }
+        if (sb.length() > AiCientConstans.MAX_CHARS) sb.setLength(AiCientConstans.MAX_CHARS);
+        return sb.toString();
+    }
+    private String readPdf(InputStream is) throws IOException {
+        try (PDDocument doc = PDDocument.load(is)) {
+            PDFTextStripper stripper = new PDFTextStripper();
+            StringBuilder sb = new StringBuilder();
+            int totalPages = doc.getNumberOfPages();
+            for (int i = 1; i <= totalPages; i++) {
+                stripper.setStartPage(i);
+                stripper.setEndPage(i);
+                sb.append(stripper.getText(doc));
+                if (sb.length() >= AiCientConstans.MAX_CHARS) break;
+            }
+            if (sb.length() > AiCientConstans.MAX_CHARS) sb.setLength(AiCientConstans.MAX_CHARS);
+            return sb.toString();
+        }
+    }
+    private String readDocx(InputStream is) throws IOException {
+        try (XWPFDocument doc = new XWPFDocument(is)) {
+            StringBuilder sb = new StringBuilder();
+            for (XWPFParagraph p : doc.getParagraphs()) {
+                sb.append(p.getText()).append("\n");
+                if (sb.length() >= AiCientConstans.MAX_CHARS) break;
+            }
+            if (sb.length() > AiCientConstans.MAX_CHARS) sb.setLength(AiCientConstans.MAX_CHARS);
+            return sb.toString();
+        }
+    }
+    private String readExcel(InputStream is) throws IOException {
+        try (Workbook workbook = WorkbookFactory.create(is)) {
+            StringBuilder sb = new StringBuilder();
+            Sheet sheet = workbook.getSheetAt(0);
+            for (Row row : sheet) {
+                for (Cell cell : row) {
+                    sb.append(cell.toString()).append("\t");
+                }
+                sb.append("\n");
+                if (sb.length() >= AiCientConstans.MAX_CHARS) break;
+            }
+            if (sb.length() > AiCientConstans.MAX_CHARS) sb.setLength(AiCientConstans.MAX_CHARS);
+            return sb.toString();
+        }
+    }
+    private String readPptx(InputStream is) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        try (XMLSlideShow ppt = new XMLSlideShow(is)) {
+            int slideNumber = 1;
+            for (XSLFSlide slide : ppt.getSlides()) {
+                sb.append("=== 第 ").append(slideNumber++).append("页 ===\n");
+                for (XSLFShape shape : slide.getShapes()) {
+                    if (shape instanceof XSLFTextShape) {
+                        String text = ((XSLFTextShape) shape).getText();
+                        if (text != null && !text.trim().isEmpty()) {
+                            sb.append(text).append("\n");
+                        }
+                    }
+                }
+                sb.append("\n");
+                if (sb.length() >= AiCientConstans.MAX_CHARS) break;
+            }
+        }
+        if (sb.length() > AiCientConstans.MAX_CHARS) sb.setLength(AiCientConstans.MAX_CHARS);
+        return sb.toString();
+    }
+}
+
+
+
+

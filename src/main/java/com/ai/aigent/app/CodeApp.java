@@ -9,7 +9,6 @@ import com.ai.aigent.constant.AiConstants;
 import com.ai.aigent.entity.VO.ChatResult;
 import com.ai.aigent.entity.domin.AiAttachment;
 import com.ai.aigent.entity.domin.ChatMessage;
-import com.ai.aigent.entity.dto.ChatEmbeddingDTO;
 import com.ai.aigent.entity.dto.ChatSendReq;
 import com.ai.aigent.entity.dto.RegenDTO;
 import com.ai.aigent.service.AiAttachmentService;
@@ -293,10 +292,8 @@ public class CodeApp {
         } else {
             localToolCallbacks = null;
         }
-
         // 4️⃣ 先存用户消息
         chatMessageService.saveMessage(chatSendReq);
-
         // 提到外面，生命周期清晰
         StringBuilder full = new StringBuilder();
         StringBuilder reasoningContent = new StringBuilder();
@@ -308,7 +305,6 @@ public class CodeApp {
         AtomicReference<Integer> cached_tokens = new AtomicReference<>(0);
         AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
-
         // 5️⃣ 响应式读取附件
         Mono<String> attachmentMono = Mono.fromCallable(() -> {
             if (chatSendReq.getAttachments().isEmpty()) return "";
@@ -418,12 +414,7 @@ public class CodeApp {
             }
         })
         .doFinally(signal -> {
-            if (Boolean.TRUE.equals(chatSendReq.getIsImageGen())) {
-                sink.tryEmitComplete();
-                return;
-            }
             String finalAnswer = buildFinalAnswer(reasoningContent, full);
-
             if (signal == SignalType.ON_COMPLETE) {
                 // 正常跑完：保存完整内容
                 if (!finalAnswer.isEmpty()) {
@@ -490,82 +481,214 @@ public class CodeApp {
         dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),
                               completion_tokens.get(), cached_tokens.get());
         chatMessageService.saveAssistantMessage(chatId, finalAnswer, token.get(),
-                (int) (endTime.get() - startTime.get()));
+                (int) (endTime.get() - startTime.get()),prompt_tokens.get(), completion_tokens.get(), cached_tokens.get());
     }
      @Transactional
-    public Flux<ChatResponse> doChatStreamRegenerate(RegenDTO regenDTO, String userId) {
-         String userMessageId = regenDTO.getUserMessageId();
-         ChatMessage chatMessage = chatMessageService.getById(userMessageId);//获取用户消息
-         UserMessage userMessage = KryoUtils.deserialize(chatMessage.getPayload());
-         String chatId = regenDTO.getChatId();
+    public Flux<ChatResult> doChatStreamRegenerate(RegenDTO regenDTO, String userId,String type) {
+        String userMessageId = regenDTO.getUserMessageId();
+        ChatMessage chatMessage = chatMessageService.getById(userMessageId);//获取用户消息
+        UserMessage userMessage = KryoUtils.deserialize(chatMessage.getPayload());
+        String chatId = regenDTO.getChatId();
         String message =userMessage.getText();
-        StringBuilder full = new StringBuilder();
-        StringBuilder attachmentContent = new StringBuilder();
-        StringBuilder reasoningContent=new StringBuilder();
-         List<AiAttachment> list = attachmentService.list(new LambdaQueryWrapper<AiAttachment>().eq(AiAttachment::getChatId, userMessageId));
-         if(list!=null&&!list.isEmpty())//获取附件
-        {
-            for (AiAttachment aiAttachment : list) {
-                attachmentContent.append(attachmentReaderUtil.readContent(aiAttachment, regenDTO.getUserMessageId(), chatId, message));
-                attachmentContent.append("\n");
-            }
+        List<AiAttachment> list = attachmentService.list(new LambdaQueryWrapper<AiAttachment>().eq(AiAttachment::getChatId, userMessageId));
+        // 1️⃣ 前缀 SSE：附件加载骨架
+        Flux<ChatResult> prefixFlux = Flux.empty();
+        if (!list.isEmpty()) {
+            ChatResult attachmentChat = new ChatResult();
+            attachmentChat.setText("<<<ATTACHMENT_LOADING>>>");
+            prefixFlux = Flux.just(attachmentChat);
         }
-        if(chatMessage.getIsThinking()){
-              chatClientBuilder.defaultOptions(thinking());
+        // 2️⃣ Thinking 模式配置
+        if (Boolean.TRUE.equals(chatMessage.getIsThinking())) {
+            chatClientBuilder.defaultOptions(thinking());
         }
         ChatClient chatClient = chatClientBuilder.build();
-        Flux<ChatResponse> aiFlux = chatClient.prompt().user(message)
-                .system(SystemPrompt.GENERAL_SYSTEM_PROMPT+(list==null||list.isEmpty()?"":attachmentContent.toString()))
-                .advisors(advisor -> advisor
-                        .param(ChatMemory.CONVERSATION_ID, chatId)
-                        .param("messageId", userMessageId)
-                )
-                .stream().chatResponse()
-                .doOnNext(chatResponse -> {
-                    var msg = chatResponse.getResult().getOutput();
-                     Object reasoning = msg.getMetadata().get("reasoningContent");
-                    if (reasoning != null) reasoningContent.append(reasoning);
-                    if (msg.getText() != null && !msg.getText().isEmpty()) {
-                        full.append(msg.getText());
-                    }
-//                   if (msg instanceof ZhiPuAiAssistantMessage zhipuMsg) {
-//                       if (zhipuMsg.getText()!=null) {
-//                            content = zhipuMsg.getText();
-//                        }
-//                        String reasoning = "";
-//                        if (zhipuMsg.getReasoningContent()!=null) {
-//                            reasoning = zhipuMsg.getReasoningContent();
-//                        }
-//                        if (!reasoning.isEmpty()) reasoningContent.append(reasoning);
-//                        if (!content.isEmpty()) full.append(content);
-//                   }
+        // 3️⃣ 动态工具挂载
+        ToolCallback[] localToolCallbacks;
+        if (Boolean.TRUE.equals(chatMessage.getIsImage())) {
+            localToolCallbacks = ToolCallbacks.from(imageGenerateTool);
+        } else if (Boolean.TRUE.equals(chatMessage.getIsSearch())) {
+            localToolCallbacks = ToolCallbacks.from(webSearchTool);
+        } else if (Boolean.TRUE.equals(chatMessage.getIsGenerate())) {
+            localToolCallbacks = ToolCallbacks.from(fileOperationTool);
+        } else {
+            localToolCallbacks = null;
+        }
+        // 提到外面，生命周期清晰
+        StringBuilder full = new StringBuilder();
+        StringBuilder reasoningContent = new StringBuilder();
+        List<Media> mediaList = new ArrayList<>();
+        AtomicReference<Boolean>hasTollCall=new AtomicReference<>(false);
+        AtomicReference<Usage> finalUsage = new AtomicReference<>();
+        AtomicReference<Integer> token = new AtomicReference<>(0);
+        AtomicReference<Integer> prompt_tokens = new AtomicReference<>(0);
+        AtomicReference<Integer> completion_tokens = new AtomicReference<>(0);
+        AtomicReference<Integer> cached_tokens = new AtomicReference<>(0);
+        AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
+        AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
+        // 5️⃣ 响应式读取附件
+        Mono<String> attachmentMono = Mono.fromCallable(() -> {
+            if (list.isEmpty()) return "";
+            StringBuilder attachmentContent = new StringBuilder();
+            for (AiAttachment aiAttachment :list) {
+                if (aiAttachment.getFileType().startsWith("image/")) {
+                    COSObject object = attachmentReaderUtil.getObject(AiConstants.bulk, aiAttachment.getFileUrl());
+                    cn.hutool.core.io.resource.Resource resource = new InputStreamResource(object.getObjectContent());
+                    byte[] bytes = StreamUtils.copyToByteArray(resource.getStream());
+                    mediaList.add(Media.builder()
+                            .mimeType(MimeTypeUtils.parseMimeType(aiAttachment.getFileType()))
+                            .id(aiAttachment.getId().toString())
+                            .name(aiAttachment.getFileName())
+                            .data(bytes).build());
+                    continue;
                 }
-                )
-                .doFinally(signal -> {
-                    String finalAnswer="";
-                    // 无论前端取消 / 断连 / 正常完成，这里都会执行
-                    if (!reasoningContent.isEmpty()) {
-                        reasoningContent.append("</Think>");
-                        finalAnswer="<Think>"+reasoningContent;
+                attachmentContent.append(
+                        attachmentReaderUtil.readContent(aiAttachment, userMessageId, chatId, message)
+                ).append("\n");
+            }
+            return attachmentContent.toString();
+        }).subscribeOn(Schedulers.boundedElastic());
+        // 6️⃣ system prompt
+        String system = chatMessage.getIsEcharts()
+                ? SystemPrompt.ECHARTS_SYSTEM_PROMPT
+                : SystemPrompt.GENERAL_SYSTEM_PROMPT;
+
+        // 7️⃣ Sink：解耦 AI 流和 SSE 连接
+        Sinks.Many<ChatResult> sink = Sinks.many().unicast().onBackpressureBuffer();
+        Map<String, Object> toolContext = Collections.singletonMap("chatId", chatId);
+
+        // 8️⃣ 后台独立订阅 AI 流，生命周期与 SSE 无关
+        Disposable disposable = attachmentMono.<ChatResponse>flatMapMany(attachmentContent -> {
+            var promptBuilder = chatClient.prompt()
+                    .user(promptUserSpec -> promptUserSpec
+                            .text(message)
+                            .media(mediaList.toArray(new Media[0])))
+                    .system(system + attachmentContent)
+                    .advisors(advisor -> advisor
+                            .param(ChatMemory.CONVERSATION_ID, chatId)
+                            .param("messageId", regenDTO.getAssistantMessageId()));
+            if (localToolCallbacks != null) {
+                promptBuilder.toolCallbacks(localToolCallbacks);
+            }
+            return promptBuilder
+                    .toolContext(toolContext)
+                    .stream()
+                    .chatResponse();
+        })
+        .doOnError(throwable -> log.error("AI流异常: {}", throwable.getMessage()))
+        .onErrorContinue((throwable, o) -> log.error("AI流异常跳过: {}", throwable.getMessage()))
+        .switchIfEmpty(Flux.error(new RuntimeException("AI 响应失败")))
+        .doOnNext(chatResponse -> {
+            try {
+                if (chatResponse == null) return;
+                Usage usage = chatResponse.getMetadata().getUsage();
+                if (usage != null && usage.getTotalTokens() != null) {
+                    finalUsage.set(usage);
+                }
+                var result = chatResponse.getResult();
+                var msg = result.getOutput();
+                Optional.ofNullable(msg.getMetadata())
+                        .map(meta -> meta.get("reasoningContent"))
+                        .map(Object::toString)
+                        .ifPresent(reasoningContent::append);
+
+                String text = msg.getText();
+                if (text != null && !text.isEmpty()) {
+                    full.append(text);
+                }
+                // 构建并推入 sink
+                ChatResult chatResult = new ChatResult();
+                String reasoning = Optional.of(msg.getMetadata())
+                        .map(meta -> meta.get("reasoningContent"))
+                        .map(Object::toString).orElse("");
+                chatResult.setReasoning(reasoning);
+                if (text != null && !text.isEmpty()) {
+                    chatResult.setText(text);
+                }
+                sink.tryEmitNext(chatResult);
+                if(chatResponse.hasToolCalls()){
+                    hasTollCall.set(true);
+                }
+            } catch (Throwable e) {
+                log.error("解析 chatResponse 时发生异常", e);
+            }
+        })
+        .doOnComplete(() -> {
+            // 只处理 usage，不调 sink.tryEmitComplete()，交给 doFinally 统一处理
+            endTime.set(System.currentTimeMillis());
+            Usage usage = finalUsage.get();
+            if (usage == null) return;
+            if (usage.getPromptTokens() != null) prompt_tokens.set(usage.getPromptTokens());
+            if (usage.getCompletionTokens() != null) completion_tokens.set(usage.getCompletionTokens());
+            if (usage.getTotalTokens() != null) token.set(usage.getTotalTokens());
+            if (usage.getNativeUsage() instanceof Map) {
+                Map<String, Object> map = (Map<String, Object>) usage.getNativeUsage();
+                Object promptTokensDetails = map.get("prompt_tokens_details");
+                if (promptTokensDetails instanceof Map) {
+                    Map<String, Object> detailsMap = (Map<String, Object>) promptTokensDetails;
+                    cached_tokens.set(Integer.parseInt(detailsMap.get("cached_tokens").toString()));
+                }
+            }
+        })
+        .doFinally(signal -> {
+            if (hasTollCall.get()&&Boolean.TRUE.equals(chatMessage.getIsImage())) {
+                sink.tryEmitComplete();
+                return;
+            }
+            String finalAnswer = buildFinalAnswer(reasoningContent, full);
+            if (signal == SignalType.ON_COMPLETE) {
+                // 正常跑完：保存完整内容
+                if (!finalAnswer.isEmpty()) {
+                     dailyService.addTotalUsage(userId, type, token.get());//增加用户使用量
+                     dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),//每天增加使用量
+                              completion_tokens.get(), cached_tokens.get());
+        chatMessageService.updateMessage(chatId, finalAnswer,regenDTO.getAssistantMessageId(),"assistant",token.get(),
+                (int) (endTime.get() - startTime.get()),prompt_tokens.get(),completion_tokens.get(),cached_tokens.get());
+                }
+                sink.tryEmitComplete();
+
+            } else if (signal == SignalType.CANCEL) {
+                if (cancelTokenRegistry.isCancelled(chatId)) {
+                    endTime.set(System.currentTimeMillis());
+                    Usage usage = finalUsage.get();
+                    if (usage == null) return;
+                    if (usage.getPromptTokens() != null) prompt_tokens.set(usage.getPromptTokens());
+                    if (usage.getCompletionTokens() != null) completion_tokens.set(usage.getCompletionTokens());
+                    if (usage.getTotalTokens() != null) token.set(usage.getTotalTokens());
+                    if (usage.getNativeUsage() instanceof Map) {
+                        Map<String, Object> map = (Map<String, Object>) usage.getNativeUsage();
+                        Object promptTokensDetails = map.get("prompt_tokens_details");
+                        if (promptTokensDetails instanceof Map) {
+                            Map<String, Object> detailsMap = (Map<String, Object>) promptTokensDetails;
+                            cached_tokens.set(Integer.parseInt(detailsMap.get("cached_tokens").toString()));
+                        }
                     }
-                    finalAnswer+=full;
+                    // 主动取消：保存已有内容
+                    cancelTokenRegistry.clear(chatId);
                     if (!finalAnswer.isEmpty()) {
-                        ChatEmbeddingDTO dto = new ChatEmbeddingDTO();
-                        dto.setUserId(userId);
-                        dto.setChatId(chatId);
-                        dto.setUserMessage(message);
-                        dto.setMemoryType("chat");
-                        dto.setAssistantMessage(finalAnswer);
-                        chatMessageService.updateMessage(chatId,finalAnswer,regenDTO.getAssistantMessageId(),"assistant");
+                         dailyService.addTotalUsage(userId, type, token.get());//增加用户使用量
+                         dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),//每天增加使用量
+                                  completion_tokens.get(), cached_tokens.get());
+                        chatMessageService.updateMessage(chatId, finalAnswer,regenDTO.getAssistantMessageId(),"assistant",token.get(),
+                                (int) (endTime.get() - startTime.get()),prompt_tokens.get(),completion_tokens.get(),cached_tokens.get());
                     }
-                })
-                .cache(); // 关键：让 Flux 变成“可复用的热流”
-        // 返回给前端的流（前端取消不会影响 aiFlux）
-        return aiFlux
+                    sink.tryEmitComplete();
+                }
+                // 被动断开（SSE 断开）：不处理，流继续跑到 ON_COMPLETE
+            } else {
+                log.warn("AI 流未正常完成，signal={}", signal);
+                sink.tryEmitComplete();
+            }
+        })
+        .subscribeOn(Schedulers.boundedElastic())
+        .subscribe(); // 独立订阅，脱离 SSE 生命周期
+        cancelTokenRegistry.register(chatId, disposable);
+        return Flux.concat(prefixFlux, sink.asFlux())
                 .onErrorResume(e -> {
-                    // 前端断连时忽略 IOException
+                    log.error("SSE 流异常", e);
                     return Flux.empty();
                 });
+
     }
     public Flux<ChatResponse> doChatStreamBlank(ChatSendReq chatSendReq) {
         String message = chatSendReq.getMessage();

@@ -3,6 +3,7 @@ package com.ai.aigent.utils;
 import com.ai.aigent.constant.AiConstants;
 import com.ai.aigent.demo.image.VisionPerception;
 import com.ai.aigent.entity.domin.AiAttachment;
+import com.ai.aigent.service.AiAttachmentService;
 import com.qcloud.cos.COSClient;
 import com.qcloud.cos.model.COSObject;
 import jakarta.annotation.Resource;
@@ -32,12 +33,14 @@ import java.util.stream.Collectors;
 public class AttachmentReaderUtil {
     @Autowired
     private COSClient cosClient;
-    public static final long SMALL_FILE_LIMIT = 70 * 1024; // 50KB
+    public static final long SMALL_FILE_LIMIT = 80 * 1024; // 50KB
     @Resource
     @Qualifier("attachmentVectorStore")
     private VectorStore attachmentVectorStore;
     @Autowired
     private VisionPerception visionPerception;
+    @Autowired
+    private AiAttachmentService attachmentService;
   public static List<String> split(String text, int chunkSize, int overlap) {
         List<String> chunks = new ArrayList<>();
         int start = 0;
@@ -58,17 +61,17 @@ public class AttachmentReaderUtil {
         String key = url.substring(url.indexOf(AiConstants.suffix_url) + AiConstants.suffix_url.length());
         String fileType = attachment.getFileType();
         Long fileSize = attachment.getFileSize();
-        if (fileType.startsWith("image/")) {
-            COSObject object = getObject(AiConstants.bulk, key);
-            try {
-                return "User uploaded file: "+attachment.getFileName()+". Here are its contents:\n"+visionPerception.getVisionDescription(url);
-            } catch (Exception e) {
-                return e.getMessage();
-            }
-        }
-        else if(fileType.startsWith("audio/")){
-
-        }
+//        if (fileType.startsWith("image/")) {
+//            COSObject object = getObject(AiConstants.bulk, key);
+//            try {
+//                return "User uploaded file: "+attachment.getFileName()+". Here are its contents:\n"+visionPerception.getVisionDescription(url);
+//            } catch (Exception e) {
+//                return e.getMessage();
+//            }
+//        }
+//        else if(fileType.startsWith("audio/")){
+//
+//        }
 
         // ✅ 小文件：直接读取全文
         if (fileSize < SMALL_FILE_LIMIT) {
@@ -81,8 +84,9 @@ public class AttachmentReaderUtil {
                 throw new RuntimeException("读取 COS 文件失败: " + key, e);
             }
         }
+        attachmentService.asyncEmbedding(attachment);
 
-        // ✅ 大文件：走向量检索
+//        // ✅ 大文件：走向量检索
 //        FilterExpressionBuilder builder = new FilterExpressionBuilder();
 //        Supplier<Filter.Expression> expressionSupplier =
 //                () -> builder.eq("fileId", String.valueOf(attachment.getId())).build();

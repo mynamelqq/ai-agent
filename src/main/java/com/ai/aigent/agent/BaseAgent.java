@@ -2,6 +2,7 @@ package com.ai.aigent.agent;
 
 import cn.hutool.json.JSONUtil;
 import com.ai.aigent.agent.model.AgentEvent;
+import com.ai.aigent.agent.model.AgentSessionRegistry;
 import com.ai.aigent.agent.model.AgentState;
 import com.ai.aigent.service.AgentMessageService;
 import com.ai.aigent.service.AgentSessionService;
@@ -12,6 +13,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.Disposable;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -27,14 +29,19 @@ public abstract class BaseAgent {
     private String nextStepPrompt;
     private AgentState agentState=AgentState.IDLE;
     private int currentStep=0;
+    private volatile Disposable currentDisposable;
+    private volatile Boolean cancelled;
     private int maxStep=16;
     private ChatClient chatClient;
+    private Long sessionId;
+    private  AgentSessionRegistry agentSessionRegistry;
     private SseEmitter emitter;
     private Consumer<List<AgentEvent>> onStepFinished;//步骤完成回调
     private  AgentMessageService agentMessageService;
     private  AgentSessionService agentSessionService;
     private List<Message>messageList=new ArrayList<>();
     protected void emit(AgentEvent event) {
+        if (agentState == AgentState.FINISHED) return; // 已结束不发
         try {
             emitter.send(SseEmitter.event()
                     .name(event.getType())
@@ -43,40 +50,52 @@ public abstract class BaseAgent {
             log.error("SSE 发送失败", e);
         }
     }
+     public void cancel() {
+        cancelled = true;
+        if (currentDisposable != null && !currentDisposable.isDisposed()) {
+            currentDisposable.dispose();
+        }
+    }
     public abstract String step();
     protected void cleanup(){
          agentState = AgentState.IDLE;
     }
-     public SseEmitter runStream(String userPrompt) {
+     public SseEmitter runStream(String userPrompt,Long sessionId,List<Long>attachments) {
+        this.sessionId = sessionId;
         emitter = new SseEmitter(1000 * 60 * 7L);
+        agentSessionRegistry.register(sessionId, this);
+        emitter.onCompletion(() -> agentSessionRegistry.remove(sessionId));
+        emitter.onTimeout(() -> {
+            agentSessionRegistry.remove(sessionId);
+            cancel(); // 超时也取消后台流
+        });
         CompletableFuture.runAsync(() -> {
             try {
                 this.agentState = AgentState.RUNNING;
                 messageList.add(new UserMessage(userPrompt));
-
                 for (int i = 0; i < maxStep && agentState != AgentState.FINISHED; i++) {
                     currentStep = i + 1;
-                    emit(AgentEvent.stepStart(currentStep));
+                    emit(AgentEvent.stepStart(currentStep));//发送步骤第几
                     log.info("Executing step {}/{}", currentStep, maxStep);
-
                     String stepResult = step();
                     if ("思考完成-无需行动".equals(stepResult)) break;
                 }
-
                 if (currentStep >= maxStep) {
                     agentState = AgentState.FINISHED;
-                    emit(new AgentEvent("warn", "已达最大步骤 " + maxStep, null));
+                    emit(new AgentEvent("warn", "已达最大步骤 " + maxStep, null));//发送超步骤警告
                 }
-                emit(AgentEvent.done());
+                emit(AgentEvent.done());//发送完成
                 emitter.complete();
             } catch (Exception e) {
                 agentState = AgentState.ERROR;
                 emit(new AgentEvent("error", e.getMessage(), null));
-                emitter.completeWithError(e);
+                emitter.completeWithError(e);//发送错误
             } finally {
                 cleanup();
             }
         });
+        emitter.onCompletion(() -> agentSessionRegistry.remove(sessionId));
+        emitter.onTimeout(() -> agentSessionRegistry.remove(sessionId));
         return emitter;
     }
 
