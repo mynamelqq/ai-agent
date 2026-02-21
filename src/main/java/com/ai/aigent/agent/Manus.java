@@ -1,10 +1,11 @@
 package com.ai.aigent.agent;
 
 
-
 import com.ai.aigent.advisor.MySimpleLoggerAdvisor;
+import com.ai.aigent.agent.model.AgentSessionRegistry;
 import com.ai.aigent.service.AgentMessageService;
 import com.ai.aigent.service.AgentSessionService;
+import com.ai.aigent.service.UserUsageDailyService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
@@ -15,9 +16,11 @@ import org.springframework.stereotype.Component;
 @Component
 @Scope("prototype")  // 每次注入/获取都是新实例
 public class Manus extends ToolCallAgent{
+
     public Manus(ToolCallback[] availableTools, @Qualifier("dashScopeChatModel") ChatModel dashscopeChatModel
-            , AgentSessionService agentSessionService, AgentMessageService agentMessageService) {
-        super(availableTools);
+            , AgentSessionService agentSessionService, AgentMessageService agentMessageService, AgentSessionRegistry
+                 agentSessionRegistry, UserUsageDailyService dailyService) {
+        super(availableTools,dailyService);
         this.setName("Manus");
         String SYSTEM_PROMPT = """
         You are Manus, an all-capable AI assistant, aimed at solving any task presented by the user.
@@ -31,7 +34,8 @@ public class Manus extends ToolCallAgent{
         If you want to stop the interaction at any point, use the `terminate` tool/function call.
         """;
         this.setNextStepPrompt(NEXT_STEP_PROMPT);
-        this.setMaxStep(20);
+        this.setMaxStep(20);this.setCancelled(false);
+        this.setAgentSessionRegistry(agentSessionRegistry);
         this.setAgentMessageService(agentMessageService);
         this.setAgentSessionService(agentSessionService);
         ChatClient client=ChatClient.builder(dashscopeChatModel)

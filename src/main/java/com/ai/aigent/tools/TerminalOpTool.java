@@ -16,42 +16,36 @@ import java.util.concurrent.TimeUnit;
 
 public class TerminalOpTool {
     private static final String WORKSPACE = "E:/AAA project/aigent/aigent/tmp/file";
-      private final ObjectMapper objectMapper = new ObjectMapper();
-    private static final List<String> ALLOWED_COMMAND_PREFIX = List.of(
-            "ls",
-            "pwd","dir","cd",
-            "whoami",
-            "cat",
-            "echo",
-            "java",
-            "python",
-            "node",
-            "npm",
-            "git",
-            "mvn",
-            "gradle",
-            "find","file","grep","wc","head","tail","date","uptime"
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final List<String> COMMAND_BLACKLIST = List.of(
+            "rm", "dd", "mkfs", "fdisk", "format",
+            "shutdown", "reboot", "halt", "poweroff",
+            "sudo", "su", "runas",
+            "kill", "killall", "pkill", "taskkill",
+            "curl", "wget", "scp", "ftp", "nc", "ssh", "telnet",
+            "bash", "sh", "zsh", "cmd", "powershell", "pwsh",
+            "docker", "kubectl", "mount", "umount",
+            "modprobe", "insmod", "sysctl"
     );
-        @Tool(description = "在受限Windows环境中执行终端命令,,并返回执行结果,终端工具的目录位于E:\\AAA project\\aigent\\aigent\\src\\main\\java\\com.ai.aigent\\tools")
+
+
+    @Tool(description = "在受限Windows环境中执行终端命令,,并返回执行结果,终端工具的目录位于E:\\AAA project\\aigent\\aigent\\src\\main\\java\\com.ai.aigent\\tools")
     public String execTerminal(
             @ToolParam(description = "要执行的终端命令（仅支持白名单命令）") String command) {
 
         if (command == null || command.isBlank()) {
-            return toJson(TerminalExecResponseDTO.error(null, "command 不能为空",ExecErrorType.UNKNOWN));
+            return toJson(TerminalExecResponseDTO.error(null, "command 不能为空", ExecErrorType.UNKNOWN));
         }
-
         command = command.trim();
-
         // 1️⃣ 安全校验
         if (!isCommandAllowed(command)) {
-            return toJson(TerminalExecResponseDTO.error(command, "命令不被允许",ExecErrorType.PERMISSION_DENIED));
+            return toJson(TerminalExecResponseDTO.error(command, "命令不被允许", ExecErrorType.PERMISSION_DENIED));
         }
-
         try {
-            ProcessBuilder builder=new ProcessBuilder();
+            ProcessBuilder builder = new ProcessBuilder();
 
             // Linux / Mac
-            builder.command("cmd.exe","/c", "cd /d \"E:\\AAA project\\aigent\\aigent\\tmp\\file\" && " +command);//bash", "-c
+            builder.command("cmd.exe", "/c", "cd /d \"E:\\AAA project\\aigent\\aigent\\tmp\\file\" && " + command);//bash", "-c
 
             builder.redirectErrorStream(false);
 
@@ -62,7 +56,7 @@ public class TerminalOpTool {
             if (!finished) {
                 ExecErrorType errorType = ExecErrorType.TIMEOUT;
                 process.destroyForcibly();
-                return toJson(TerminalExecResponseDTO.error(command, "命令执行超时",errorType));
+                return toJson(TerminalExecResponseDTO.error(command, "命令执行超时", errorType));
             }
 
             // 3️⃣ 读取输出
@@ -72,29 +66,22 @@ public class TerminalOpTool {
             int exitCode = process.exitValue();
             ExecErrorType errorType = classifyError(stderr);
             return toJson(
-                    TerminalExecResponseDTO.ok(command, stdout, stderr, exitCode,errorType)
+                    TerminalExecResponseDTO.ok(command, stdout, stderr, exitCode, errorType)
             );
 
         } catch (Exception e) {
-            return "终端工具执行失败:"+toJson(
-                    TerminalExecResponseDTO.error(command, e.getMessage(),ExecErrorType.UNKNOWN)
+            return "终端工具执行失败:" + toJson(
+                    TerminalExecResponseDTO.error(command, e.getMessage(), ExecErrorType.UNKNOWN)
             );
         }
     }
+
     private boolean isCommandAllowed(String command) {
-
-        // 禁止危险符号
-//        if (
-//                command.contains(";")
-//                || command.contains(">")
-//                || command.contains("<")) {
-//            return false;
-//        }
-
         String baseCmd = command.split("\\s+")[0];
-        return ALLOWED_COMMAND_PREFIX.contains(baseCmd);
+        return !COMMAND_BLACKLIST.contains(baseCmd);
     }
-       private String readStream(InputStream inputStream, int maxChars)
+
+    private String readStream(InputStream inputStream, int maxChars)
             throws IOException {
 
         Charset charset = Charset.forName("GBK");
@@ -114,15 +101,17 @@ public class TerminalOpTool {
         }
         return sb.toString();
     }
-     private String toJson(Object obj) {
+
+    private String toJson(Object obj) {
         try {
             return objectMapper.writeValueAsString(obj);
         } catch (Exception e) {
             return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
         }
     }
+
     private ExecErrorType classifyError(String stderr) {
-        if (stderr == null||stderr.isEmpty()) return ExecErrorType.NONE;
+        if (stderr == null || stderr.isEmpty()) return ExecErrorType.NONE;
         String err = stderr.toLowerCase();
         if (err.contains("no such file") || err.contains("找不到")) {
             return ExecErrorType.FILE_NOT_FOUND;
@@ -135,11 +124,4 @@ public class TerminalOpTool {
         }
         return ExecErrorType.RUNTIME_ERROR;
     }
-//    private Charset getConsoleCharset() {
-//        String os = System.getProperty("os.name").toLowerCase();
-//        if (os.contains("win")) {
-//            return Charset.forName("GBK");
-//        }
-//        return StandardCharsets.UTF_8;
-//    }
 }

@@ -28,13 +28,18 @@ import java.util.List;
 public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatMessage>
     implements ChatMessageService {
     @Override
-    public void saveAssistantMessage(String conversationId, String message, Integer token,Integer cost) {
+    public void saveAssistantMessage(String conversationId, String message, Integer token,Integer cost,
+     Integer promptTokens,  Integer completionTokens,Integer cachedTokens
+    ) {
             AssistantMessage build = AssistantMessage.builder().content(message).build();
             ChatMessage entity = new ChatMessage();
             entity.setConversationId(conversationId);
             entity.setCreateTime(LocalDateTime.now());
             entity.setPayload(KryoUtils.serialize(build));
             entity.setIsDeleted(0);entity.setToken(token);entity.setCost(cost);
+            entity.setPromptTokens(promptTokens);
+            entity.setCompletionTokens(completionTokens);
+            entity.setCachedTokens(cachedTokens);
             entity.setIsImage(false);
             entity.setIsGenerate(false);
             entity.setIsThinking(false);
@@ -44,14 +49,22 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             this.save(entity);
     }
     @Override
-    public void updateMessage(String conversationId, String message, String messageId, String type) {
+    public void updateMessage(String conversationId, String message, String messageId, String type, Integer token,Integer cost,
+                              Integer promptTokens,  Integer completionTokens,Integer cachedTokens) {
         if(type=="user"){
             this.lambdaUpdate().eq(ChatMessage::getId, messageId)
-                .set(ChatMessage::getPayload, KryoUtils.serialize(new UserMessage(message))).update();
+                .set(ChatMessage::getPayload, KryoUtils.serialize(new UserMessage(message)))
+                    .update();
         }
         else{
             this.lambdaUpdate().eq(ChatMessage::getId, messageId)
-                .set(ChatMessage::getPayload, KryoUtils.serialize(new AssistantMessage(message))).update();
+                .set(ChatMessage::getPayload, KryoUtils.serialize(new AssistantMessage(message)))
+                    .set(ChatMessage::getCost,cost)
+                    .setSql("prompt_tokens = prompt_tokens + "+promptTokens)
+                    .setSql("completion_tokens = completion_tokens + "+completionTokens)
+                    .setSql("cached_tokens = cached_tokens + "+cachedTokens)
+                    .setSql("token = token + "+ token)
+                    .update();
         }
 
     }

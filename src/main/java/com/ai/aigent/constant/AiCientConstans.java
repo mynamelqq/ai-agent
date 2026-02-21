@@ -6,4 +6,5 @@ public interface AiCientConstans
     public static final Integer  MESSAGE_PAGE_SIZE=6;
     public static final int MAX_LENGTH_EMBEDDING = 6800;
     public static final int MAX_TOKENS_EMBEDDING = 8192;
+    public static final int MAX_CHARS = 100_000;
 }

@@ -15,7 +15,7 @@ public class WebSearchTool {
     @Autowired
     private BochaWebSearchClient client;
     @Tool(
-        name = "bocha_web_search",
+        name = "web_search",
         description = "从博查AI搜索网页信息，返回网页标题、摘要和链接"
         ,returnDirect = false
     )

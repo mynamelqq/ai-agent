@@ -17,4 +17,9 @@ public class ChatMessageVO {
     List<AttachmentVO>aiAttachments;
     private Integer cost;
     private LocalDateTime createTime;
+    private Boolean isThinking;
+    private Boolean isImage;
+    private Boolean isGenerate;
+    private Boolean isEcharts;
+    private Boolean isSearch;
 }

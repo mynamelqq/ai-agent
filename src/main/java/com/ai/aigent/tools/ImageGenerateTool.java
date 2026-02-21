@@ -34,7 +34,6 @@ public class ImageGenerateTool {
                     response.getResult().getOutput().getUrl()
             );
             String chatId = context.getContext().get("chatId").toString();
-            chatMessageService.saveAssistantMessage(chatId,str,0,0);
             return str;
         }
         catch (Exception e)
