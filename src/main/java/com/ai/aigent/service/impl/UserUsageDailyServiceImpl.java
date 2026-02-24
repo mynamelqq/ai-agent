@@ -9,9 +9,7 @@ import com.ai.aigent.mapper.UserUsageDailyMapper;
 import com.ai.aigent.service.AnonymousUserService;
 import com.ai.aigent.service.UserUsageDailyService;
 import com.ai.aigent.service.UsersService;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -44,7 +42,6 @@ public class UserUsageDailyServiceImpl extends ServiceImpl<UserUsageDailyMapper,
 
         // 2️⃣ 获取今日已用
         long todayUsed =todayTokens(userId);
-
         // 3️⃣ 判断是否超限
         if (todayUsed  > dailyLimit) {
             throw new TokenLimitExceed(ResultCodeEnum.TOKEN_LIMIT_EXCEEDED.getCode(),"TOKEN_LIMIT_EXCEEDED");

@@ -22,6 +22,7 @@ import com.ai.aigent.utils.KryoUtils;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qcloud.cos.model.COSObject;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -40,6 +41,7 @@ import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.zhipuai.ZhiPuAiChatModel;
 import org.springframework.ai.zhipuai.ZhiPuAiChatOptions;
 import org.springframework.ai.zhipuai.api.ZhiPuAiApi;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -71,6 +73,7 @@ import java.util.stream.Collectors;
 public class CodeApp {
     private final ChatClient.Builder chatClientBuilder;
     private final JdbcChatMemoryAdvisor chatMemory;
+
     //    @Autowired
 //    @Resource
 //    private OllamaChatModel ollamaChatModel;
@@ -79,9 +82,9 @@ public class CodeApp {
     private OpenAiChatModel openAiChatModel;
 
 
-//    @Resource
-//    @Qualifier("zhiPuAiChatModel")
-//    private ZhiPuAiChatModel zhiPuAiChatModel;
+    @Resource
+    @Qualifier("zhiPuAiChatModel")
+    private ZhiPuAiChatModel zhiPuAiChatModel;
     @Resource
     private VectorStore codeAppVectorStore;
     private final SummaryMemoryAdvisor summaryMemoryAdvisor;
@@ -119,7 +122,7 @@ public class CodeApp {
     }
 
     public String genTitle(String args)  {
-        return  dashScopeChatModel
+        return  zhiPuAiChatModel
                 .stream(new Prompt(ChatPrompt.titleGeneratePrompt+args))
                 .collectList().block().stream().map(response -> response.getResult().getOutput().getText())
             .collect(Collectors.joining());
@@ -302,6 +305,9 @@ public class CodeApp {
         AtomicReference<Integer> token = new AtomicReference<>(0);
         AtomicReference<Integer> prompt_tokens = new AtomicReference<>(0);
         AtomicReference<Integer> completion_tokens = new AtomicReference<>(0);
+        AtomicReference<Boolean>isThinking = new AtomicReference<>(false);
+        AtomicReference<Long>thinkingStartTime=new AtomicReference<>(System.currentTimeMillis());
+        AtomicReference<Long>thinkingEndTime=new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Integer> cached_tokens = new AtomicReference<>(0);
         AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
@@ -367,20 +373,26 @@ public class CodeApp {
                     finalUsage.set(usage);
                 }
                 var result = chatResponse.getResult();
-                if (result == null) return;
                 var msg = result.getOutput();
-                if (msg == null) return;
-
                 Optional.ofNullable(msg.getMetadata())
                         .map(meta -> meta.get("reasoningContent"))
                         .map(Object::toString)
-                        .ifPresent(reasoningContent::append);
-
+                        .ifPresent((str)->{
+                            if(str.isEmpty())return;
+                            reasoningContent.append(str);
+                            if(!isThinking.get()){
+                                isThinking.set(true);
+                                thinkingStartTime.set(System.currentTimeMillis());
+                            }
+                        });
                 String text = msg.getText();
                 if (text != null && !text.isEmpty()) {
+                    if(isThinking.get()){
+                        isThinking.set(false);
+                        thinkingEndTime.set(System.currentTimeMillis());
+                    }
                     full.append(text);
                 }
-
                 // 构建并推入 sink
                 ChatResult chatResult = new ChatResult();
                 String reasoning = Optional.of(msg.getMetadata())
@@ -397,7 +409,6 @@ public class CodeApp {
         })
         .doOnComplete(() -> {
             // 只处理 usage，不调 sink.tryEmitComplete()，交给 doFinally 统一处理
-
             endTime.set(System.currentTimeMillis());
             Usage usage = finalUsage.get();
             if (usage == null) return;
@@ -419,7 +430,8 @@ public class CodeApp {
                 // 正常跑完：保存完整内容
                 if (!finalAnswer.isEmpty()) {
                     saveAndRecord(chatId, userId, type, finalAnswer, token,
-                            prompt_tokens, completion_tokens, cached_tokens, startTime, endTime);
+                            prompt_tokens, completion_tokens, cached_tokens, startTime, endTime,
+                            (thinkingEndTime.get()-thinkingStartTime.get()));
                 }
                 sink.tryEmitComplete();
 
@@ -443,7 +455,8 @@ public class CodeApp {
                     cancelTokenRegistry.clear(chatId);
                     if (!finalAnswer.isEmpty()) {
                         saveAndRecord(chatId, userId, type, finalAnswer, token,
-                                prompt_tokens, completion_tokens, cached_tokens, startTime, endTime);
+                                prompt_tokens, completion_tokens, cached_tokens, startTime,
+                                endTime,(thinkingEndTime.get()-thinkingStartTime.get()));
                     }
                     sink.tryEmitComplete();
                 }
@@ -476,12 +489,13 @@ public class CodeApp {
     private void saveAndRecord(String chatId, String userId, String type, String finalAnswer,
             AtomicReference<Integer> token, AtomicReference<Integer> prompt_tokens,
             AtomicReference<Integer> completion_tokens, AtomicReference<Integer> cached_tokens,
-            AtomicReference<Long> startTime, AtomicReference<Long> endTime) {
+            AtomicReference<Long> startTime, AtomicReference<Long> endTime,Long thinkingTime) {
         dailyService.addTotalUsage(userId, type, token.get());
         dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),
                               completion_tokens.get(), cached_tokens.get());
         chatMessageService.saveAssistantMessage(chatId, finalAnswer, token.get(),
-                (int) (endTime.get() - startTime.get()),prompt_tokens.get(), completion_tokens.get(), cached_tokens.get());
+                (int) (endTime.get() - startTime.get()),prompt_tokens.get(), completion_tokens.get(), cached_tokens.get(),
+                thinkingTime);
     }
      @Transactional
     public Flux<ChatResult> doChatStreamRegenerate(RegenDTO regenDTO, String userId,String type) {
@@ -521,6 +535,9 @@ public class CodeApp {
         AtomicReference<Boolean>hasTollCall=new AtomicReference<>(false);
         AtomicReference<Usage> finalUsage = new AtomicReference<>();
         AtomicReference<Integer> token = new AtomicReference<>(0);
+        AtomicReference<Boolean>isThinking = new AtomicReference<>(false);
+        AtomicReference<Long>thinkingStartTime=new AtomicReference<>(System.currentTimeMillis());
+        AtomicReference<Long>thinkingEndTime=new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Integer> prompt_tokens = new AtomicReference<>(0);
         AtomicReference<Integer> completion_tokens = new AtomicReference<>(0);
         AtomicReference<Integer> cached_tokens = new AtomicReference<>(0);
@@ -590,10 +607,20 @@ public class CodeApp {
                 Optional.ofNullable(msg.getMetadata())
                         .map(meta -> meta.get("reasoningContent"))
                         .map(Object::toString)
-                        .ifPresent(reasoningContent::append);
-
+                        .ifPresent((str)->{
+                            if(str.isEmpty())return;
+                            reasoningContent.append(str);
+                            if(!isThinking.get()){
+                                isThinking.set(true);
+                                thinkingStartTime.set(System.currentTimeMillis());
+                            }
+                        });
                 String text = msg.getText();
                 if (text != null && !text.isEmpty()) {
+                    if(isThinking.get()){
+                        isThinking.set(false);
+                        thinkingEndTime.set(System.currentTimeMillis());
+                    }
                     full.append(text);
                 }
                 // 构建并推入 sink
@@ -643,7 +670,8 @@ public class CodeApp {
                      dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),//每天增加使用量
                               completion_tokens.get(), cached_tokens.get());
         chatMessageService.updateMessage(chatId, finalAnswer,regenDTO.getAssistantMessageId(),"assistant",token.get(),
-                (int) (endTime.get() - startTime.get()),prompt_tokens.get(),completion_tokens.get(),cached_tokens.get());
+                (int) (endTime.get() - startTime.get()),prompt_tokens.get(),completion_tokens.get()
+                ,cached_tokens.get(),(thinkingEndTime.get()-thinkingStartTime.get()));
                 }
                 sink.tryEmitComplete();
 
@@ -670,7 +698,8 @@ public class CodeApp {
                          dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),//每天增加使用量
                                   completion_tokens.get(), cached_tokens.get());
                         chatMessageService.updateMessage(chatId, finalAnswer,regenDTO.getAssistantMessageId(),"assistant",token.get(),
-                                (int) (endTime.get() - startTime.get()),prompt_tokens.get(),completion_tokens.get(),cached_tokens.get());
+                                (int) (endTime.get() - startTime.get()),prompt_tokens.get(),
+                                completion_tokens.get(),cached_tokens.get(),(thinkingEndTime.get()-thinkingStartTime.get()));
                     }
                     sink.tryEmitComplete();
                 }

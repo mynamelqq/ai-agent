@@ -16,12 +16,18 @@ import org.springframework.stereotype.Service;
 @Service
 public class AgentMessageServiceImpl extends ServiceImpl<AgentMessageMapper, AgentMessage>
     implements AgentMessageService{
-    public AgentMessage saveAgentMessage(Long sessionId, String type, AgentMessagePayload payload, Integer token)
+    public AgentMessage saveAgentMessage(String sessionId, String type, AgentMessagePayload payload,
+                                         Integer token,Long thinkingTime,Long cost, Integer promptTokens,  Integer completionTokens,Integer cachedTokens)
     {
         AgentMessage msg = new AgentMessage();
         msg.setPayload(JSONUtil.toJsonStr(payload));
         msg.setSessionId(sessionId);
+        msg.setCost(cost.intValue());
+        msg.setCachedTokens(cachedTokens);
+        msg.setPromptTokens(promptTokens);
+        msg.setCompletionTokens(completionTokens);
         msg.setType(type);
+        msg.setThinkingTime(thinkingTime.intValue());
         msg.setCreatedAt(new java.util.Date());
         msg.setTokens(token);
         return save(msg)?msg:null;

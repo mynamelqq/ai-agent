@@ -11,10 +11,7 @@ import com.ai.aigent.entity.domin.ChatMessage;
 import com.ai.aigent.entity.domin.ChatSummary;
 import com.ai.aigent.entity.domin.Conversation;
 import com.ai.aigent.exception.BusinessException;
-import com.ai.aigent.service.AiAttachmentService;
-import com.ai.aigent.service.ChatMessageService;
-import com.ai.aigent.service.ChatSummaryService;
-import com.ai.aigent.service.ConversationService;
+import com.ai.aigent.service.*;
 import com.ai.aigent.utils.JWTUtils;
 import com.ai.aigent.utils.KryoUtils;
 import com.ai.aigent.utils.PdfExportUtil;
@@ -34,6 +31,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import javax.security.auth.login.LoginException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -51,16 +49,15 @@ public class Controller {
     private ConversationService conversationService;
     @Resource
     private ChatSummaryService chatSummaryService;
+    @Resource
+    private UsersService usersService;
     @GetMapping("/list/chat")
     public Result<List<Conversation>> listChatConservations(HttpServletRequest request)
     {
-         String authHeader = request.getHeader("Authorization");
-         if(StringUtils.isBlank(authHeader) ||authHeader.isEmpty()||!JWTUtils.validateToken(authHeader))
-         {
-             return Result.error("请先登录");
-         }
-        String userId = JWTUtils.getUserId(authHeader);
-
+        String userId = usersService.getLoginUser(request);
+        if(userId.isBlank()){
+            return Result.error("请先登录");
+        }
         List<Conversation> list = conversationService.list(new LambdaQueryWrapper<Conversation>()
                 .eq(Conversation::getUser_id, userId));
         Collections.reverse(list);
@@ -149,6 +146,7 @@ public class Controller {
     @PostMapping("/chat/delete")
     public Result<?> delete(String ChatId)
     {
+
         chatMessageService.remove(new LambdaQueryWrapper<ChatMessage>()
                 .eq(ChatMessage::getConversationId, ChatId));
 

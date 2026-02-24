@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @TableName(value ="conversation")
 @Data
 public class Conversation {
-    private Long user_id;
+    private String user_id;
     private Boolean pinned;
     private String id;
     private String title;

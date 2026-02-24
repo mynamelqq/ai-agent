@@ -36,7 +36,6 @@ public String fetchWebPage(
             if (text.length() > MAX_CHARS) {
                 text = text.substring(0, MAX_CHARS) + "...";
             }
-
             return toJson(WebPageFetchResponseDTO.ok(url, text));
 
         } catch (Exception e) {

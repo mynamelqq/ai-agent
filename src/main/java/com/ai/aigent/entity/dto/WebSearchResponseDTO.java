@@ -7,10 +7,10 @@ import java.util.List;
 public class WebSearchResponseDTO {
 
     private boolean success;
-    private List<WebSearchResultDTO> results;
+    private String results;
     private String error;
 
-    public static WebSearchResponseDTO ok(List<WebSearchResultDTO> results) {
+    public static WebSearchResponseDTO ok(String results) {
         WebSearchResponseDTO dto = new WebSearchResponseDTO();
         dto.success = true;
         dto.results = results;

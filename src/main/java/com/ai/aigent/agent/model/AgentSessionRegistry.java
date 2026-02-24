@@ -8,20 +8,20 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class AgentSessionRegistry {
-     private final Map<Long, BaseAgent> sessions = new ConcurrentHashMap<>();
+     private final Map<String, BaseAgent> sessions = new ConcurrentHashMap<>();
 
-        public void register(Long sessionId, BaseAgent agent) {
+        public void register(String sessionId, BaseAgent agent) {
             sessions.put(sessionId, agent);
         }
 
-        public void cancel(Long sessionId) {
+        public void cancel(String sessionId) {
             BaseAgent agent = sessions.get(sessionId);
             if (agent != null) {
                 agent.cancel();
             }
         }
 
-        public void remove(Long sessionId) {
+        public void remove(String sessionId) {
             sessions.remove(sessionId);
         }
 }

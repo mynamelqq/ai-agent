@@ -40,7 +40,9 @@ public class jwtHandler extends OncePerRequestFilter {
   private static final Set<String> BLACK_LIST = new HashSet<>(Arrays.asList(
         "/api/user/logout",
           "/chat/rename",
-          "/chat/delete"
+          "/user/update",
+          "/sign/avatar",
+          "/delete"
     ));
     @Override
     protected void doFilterInternal(HttpServletRequest request,

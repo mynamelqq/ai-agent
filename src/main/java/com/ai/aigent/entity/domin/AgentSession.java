@@ -15,7 +15,7 @@ import java.util.Date;
 @Data
 public class AgentSession {
     @TableId(type = IdType.AUTO)
-    private Long id;
+    private String id;
     private Long userId;
     private String title;
     private String lastMessage;

@@ -10,6 +10,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 * @createDate 2026-02-20 14:41:20
 */
 public interface AgentMessageService extends IService<AgentMessage> {
-AgentMessage saveAgentMessage(Long sessionId, String type, AgentMessagePayload payload, Integer token);
+AgentMessage saveAgentMessage(String sessionId, String type, AgentMessagePayload payload, Integer token,
+                              Long thinkingTime,Long cost, Integer promptTokens,  Integer completionTokens,Integer cachedTokens);
 
 }

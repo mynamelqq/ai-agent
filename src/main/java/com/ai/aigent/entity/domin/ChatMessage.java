@@ -21,7 +21,7 @@ public class ChatMessage {
      */
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
-
+    private Integer thinkingTime;
     /**
      * 
      */

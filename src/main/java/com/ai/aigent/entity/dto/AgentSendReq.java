@@ -5,7 +5,7 @@ import lombok.Data;
 import java.util.List;
 @Data
 public class AgentSendReq {
-    private Long sessionId;
+    private String sessionId;
     private String message;
     private String messageId;
     private String token;

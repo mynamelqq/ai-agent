@@ -23,7 +23,7 @@ public class TerminalOpTool {
             "sudo", "su", "runas",
             "kill", "killall", "pkill", "taskkill",
             "curl", "wget", "scp", "ftp", "nc", "ssh", "telnet",
-            "bash", "sh", "zsh", "cmd", "powershell", "pwsh",
+            "bash", "sh", "zsh","pwsh",
             "docker", "kubectl", "mount", "umount",
             "modprobe", "insmod", "sysctl"
     );
@@ -45,12 +45,9 @@ public class TerminalOpTool {
             ProcessBuilder builder = new ProcessBuilder();
 
             // Linux / Mac
-            builder.command("cmd.exe", "/c", "cd /d \"E:\\AAA project\\aigent\\aigent\\tmp\\file\" && " + command);//bash", "-c
-
+            builder.command("cmd.exe", "/c", command);//bash", "-c
             builder.redirectErrorStream(false);
-
             Process process = builder.start();
-
             // 2️⃣ 超时控制
             boolean finished = process.waitFor(5, TimeUnit.SECONDS);
             if (!finished) {
@@ -70,7 +67,7 @@ public class TerminalOpTool {
             );
 
         } catch (Exception e) {
-            return "终端工具执行失败:" + toJson(
+            return  toJson(
                     TerminalExecResponseDTO.error(command, e.getMessage(), ExecErrorType.UNKNOWN)
             );
         }
@@ -83,7 +80,6 @@ public class TerminalOpTool {
 
     private String readStream(InputStream inputStream, int maxChars)
             throws IOException {
-
         Charset charset = Charset.forName("GBK");
 
         StringBuilder sb = new StringBuilder();

@@ -70,7 +70,7 @@ public class UserController {
         return Result.success(userVo);
     }
     @PostMapping("/update")
-    public Result<?> update(@RequestBody Map<String, Object> body) {
+    public Result<?> update(@RequestBody Map<String, Object> body) {//jwt
         String ids = body.get("id").toString();
         if (ids==null||ids.isEmpty()) {
             throw new RuntimeException("用户ID不能为空");

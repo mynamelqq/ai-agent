@@ -1,6 +1,5 @@
 package com.ai.aigent.controller;
 
-import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.ai.aigent.agent.Manus;
 import com.ai.aigent.agent.model.AgentMessagePayload;
@@ -65,14 +64,15 @@ public class AgentController {
     @PostMapping("/session")
     public Result<AgentSessionVO> createSession(String message, HttpServletRequest request, String SessionId) {
         AgentSession session = new AgentSession();
-        String userId =request.getHeader("Authorization");
-        if (userId == null) {
+        String userId =usersService.getLoginUser(request);
+        if (userId.isBlank()||userId.isEmpty()) {
             throw new IllegalArgumentException("用户未登录");
         }
         session.setUserId(Long.parseLong(JWTUtils.getUserId(userId)));
         session.setTitle(codeApp.genTitle(message));
         session.setCreateTime(new Date());
         session.setUpdateTime(new Date());
+        session.setId(SessionId);
         agentSessionService.save(session);
         AgentSessionVO vo = new AgentSessionVO();
         vo.setSessionId(session.getId());
@@ -82,13 +82,13 @@ public class AgentController {
     }
       @GetMapping("/messages")
     public Result<List<AgentMessageVO>> listMessages(
-            @RequestParam Long sessionId,HttpServletRequest request) {
-        String userId =request.getHeader("Authorization");
-        if (userId == null) {
+            @RequestParam String sessionId,HttpServletRequest request) {
+        String userId =usersService.getLoginUser(request);
+        if (userId.isBlank()||userId.isEmpty()) {
             throw new IllegalArgumentException("用户未登录");
         }
         AgentSession session = agentSessionService.getById(sessionId);
-        if (session == null || !session.getUserId().equals(Long.parseLong(JWTUtils.getUserId(userId)))) {
+        if (session == null) {
             return Result.error("无权访问");
         }
         List<AgentMessage> messages = agentMessageService.lambdaQuery()
@@ -97,15 +97,21 @@ public class AgentController {
                 .list();
         List<AgentMessageVO> vos = messages.stream().map(m -> {
             AgentMessageVO vo = new AgentMessageVO();
-            vo.setId(m.getId());
+            vo.setId(m.getId().toString());
             vo.setType(m.getType());
+            vo.setTokens(m.getTokens());
+            vo.setCost(m.getCost());
+            vo.setCachedTokens(m.getCachedTokens());
+            vo.setCompletionTokens(m.getCompletionTokens());
+            vo.setPromptTokens(m.getPromptTokens());
+            vo.setThinkingTime(m.getThinkingTime());
             vo.setCreatedAt(m.getCreatedAt());
             vo.setPayload(m.getPayload());
             return vo;
         }).collect(Collectors.toList());
         return Result.success(vos);
     }
-    private void saveMessage(Long sessionId, String type, String content,
+    private void saveMessage(String sessionId, String type, String content,
                              String reasoning, List<AssistantMessage.ToolCall> toolCalls, int tokens) {
         AgentMessagePayload payload = new AgentMessagePayload();
         payload.setContent(content);
@@ -121,19 +127,18 @@ public class AgentController {
     @Autowired
     private AgentSessionRegistry agentSessionRegistry;
     @PostMapping("/cancel")
-    public Result cancel(@RequestParam Long sessionId) {
+    public Result cancel(@RequestParam String sessionId) {
         agentSessionRegistry.cancel(sessionId);
         return Result.success();
     }
     @GetMapping("/sessions")
     public Result<List<AgentSessionVO>> listSessions(HttpServletRequest request) {
-         String authHeader = request.getHeader("Authorization");
-         if(StringUtils.isBlank(authHeader) ||authHeader.isEmpty()||!JWTUtils.validateToken(authHeader))
-         {
-             return Result.error("请先登录");
-         }
+        String userId =usersService.getLoginUser(request);
+        if (userId.isBlank()||userId.isEmpty()) {
+            throw new IllegalArgumentException("用户未登录");
+        }
         List<AgentSession> sessions = agentSessionService.lambdaQuery()
-                .eq(AgentSession::getUserId, Long.parseLong(JWTUtils.getUserId(authHeader)))
+                .eq(AgentSession::getUserId, Long.parseLong(userId))
                 .orderByDesc(AgentSession::getUpdateTime)
                 .list();
         List<AgentSessionVO> vos = sessions.stream().map(s -> {
@@ -149,16 +154,21 @@ public class AgentController {
     @PostMapping(value = "/run", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter run(@RequestBody AgentSendReq agentSendReq,HttpServletRequest req) {
          String token = agentSendReq.getToken();
-         Long sessionId = agentSendReq.getSessionId();
+         String sessionId = agentSendReq.getSessionId();
          String prompt = agentSendReq.getMessage();
          String uid;
          String type;
+          String userId =usersService.getLoginUser(req);
+        if (userId.isBlank()||userId.isEmpty()) {
+            throw new IllegalArgumentException("用户未登录");
+        }
          saveMessage(sessionId, "user", prompt, null, null, 0);
          agentSessionService.lambdaUpdate()
                 .eq(AgentSession::getId, sessionId)
                 .set(AgentSession::getLastMessage, prompt)
                 .set(AgentSession::getUpdateTime, new Date())
                 .update();
+
          if(token!=null && JWTUtils.validateToken(token)){
             uid = JWTUtils.getUserId(token);
             type = "user";

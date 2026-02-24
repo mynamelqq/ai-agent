@@ -3,8 +3,11 @@ package com.ai.aigent.tools;
 
 import com.ai.aigent.entity.VO.BochaWebSearchResponse;
 import com.ai.aigent.entity.dto.BochaWebSearchRequest;
+import com.ai.aigent.entity.dto.WebSearchResponseDTO;
+import com.ai.aigent.entity.dto.WebSearchResultDTO;
 import com.ai.aigent.utils.BochaWebSearchClient;
 import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class WebSearchTool {
+     private final ObjectMapper objectMapper = new ObjectMapper();
     @Autowired
     private BochaWebSearchClient client;
     @Tool(
@@ -52,15 +56,19 @@ public class WebSearchTool {
                   .append(v.getSummary() != null ? v.getSummary() : v.getSnippet())
                   .append("\n\n");
             }
-            return sb.toString();
+            return toJson(WebSearchResponseDTO.ok(sb.toString()));
         }
         catch (Exception e)
         {
-            e.printStackTrace();
-            return "搜索工具调用失败";
+//            e.printStackTrace();
+            return toJson(WebSearchResponseDTO.error("搜索失败:"+e.getMessage()));
         }
-
-
-
+    }
+    private String toJson(Object obj) {
+        try {
+            return objectMapper.writeValueAsString(obj);
+        } catch (Exception e) {
+            return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
+        }
     }
 }

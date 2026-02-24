@@ -1,7 +1,6 @@
 package com.ai.aigent.service;
 
 import com.ai.aigent.entity.domin.UserUsageDaily;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 import java.time.LocalDate;

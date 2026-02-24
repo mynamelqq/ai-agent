@@ -33,7 +33,7 @@ public abstract class BaseAgent {
     private volatile Boolean cancelled;
     private int maxStep=16;
     private ChatClient chatClient;
-    private Long sessionId;
+    private String sessionId;
     private  AgentSessionRegistry agentSessionRegistry;
     private SseEmitter emitter;
     private Consumer<List<AgentEvent>> onStepFinished;//步骤完成回调
@@ -60,7 +60,7 @@ public abstract class BaseAgent {
     protected void cleanup(){
          agentState = AgentState.IDLE;
     }
-     public SseEmitter runStream(String userPrompt,Long sessionId,List<Long>attachments) {
+     public SseEmitter runStream(String userPrompt,String sessionId,List<Long>attachments) {
         this.sessionId = sessionId;
         emitter = new SseEmitter(1000 * 60 * 7L);
         agentSessionRegistry.register(sessionId, this);
@@ -94,8 +94,6 @@ public abstract class BaseAgent {
                 cleanup();
             }
         });
-        emitter.onCompletion(() -> agentSessionRegistry.remove(sessionId));
-        emitter.onTimeout(() -> agentSessionRegistry.remove(sessionId));
         return emitter;
     }
 

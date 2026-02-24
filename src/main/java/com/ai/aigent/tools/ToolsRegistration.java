@@ -15,7 +15,7 @@ public class ToolsRegistration {
         WebScrapingTool webScrapingTool = new WebScrapingTool();
         DownloadResourceTool resourceDownloadTool = new DownloadResourceTool();
         TerminalOpTool terminalOperationTool = new TerminalOpTool();
-        PDFGenerationTool pdfGenerationTool = new PDFGenerationTool();
+//        SpecialFileGenerationTool specialFileGenerationTool = new SpecialFileGenerationTool();
         TimeTool timeTool=new TimeTool();
         TerminateTool terminateTool=new TerminateTool();
         return ToolCallbacks.from(timeTool,
@@ -24,8 +24,8 @@ public class ToolsRegistration {
             webSearchTool,
             webScrapingTool,
             resourceDownloadTool,
-            terminalOperationTool,
-            pdfGenerationTool
+            terminalOperationTool
+//                specialFileGenerationTool
         );
     }
 }

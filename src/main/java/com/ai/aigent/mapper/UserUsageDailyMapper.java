@@ -1,12 +1,7 @@
 package com.ai.aigent.mapper;
 
 import com.ai.aigent.entity.domin.UserUsageDaily;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-
-import java.time.LocalDate;
-import java.util.List;
-import java.util.Map;
 
 /**
 * @author MECHREVO

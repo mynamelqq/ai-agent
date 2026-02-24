@@ -98,7 +98,7 @@ public String downloadResource(
                 url, fileName, targetPath.toString(), size));
 
     } catch (Exception e) {
-        return "下载工具调用失败";
+        return toJson(DownloadResourceResponseDTO.error(url, e.getMessage()));
     }
 }
     private boolean isHttpUrl(String url) {

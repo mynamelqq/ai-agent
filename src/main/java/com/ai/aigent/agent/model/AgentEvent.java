@@ -21,8 +21,9 @@ public class AgentEvent {
     public static AgentEvent toolCall(String toolName, String args) {
         return new AgentEvent("tool_call", args, Map.of("toolName", toolName));
     }
-    public static AgentEvent toolResult(String toolName, String result) {
-        return new AgentEvent("tool_result", result, Map.of("toolName", toolName));
+    public static AgentEvent toolResult(String toolName, String result,Map<String,Object>meta) {
+        meta.put("toolName", toolName);
+        return new AgentEvent("tool_result", result, meta);
     }
     public static AgentEvent stepStart(int step) {
         return new AgentEvent("step_start", "Step " + step, Map.of("step", step));

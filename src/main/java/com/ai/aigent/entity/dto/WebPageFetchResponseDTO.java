@@ -4,7 +4,7 @@ import lombok.Data;
 
 @Data
 public class WebPageFetchResponseDTO {
-        private boolean success;
+    private boolean success;
     private String url;
     private String content;
     private String error;

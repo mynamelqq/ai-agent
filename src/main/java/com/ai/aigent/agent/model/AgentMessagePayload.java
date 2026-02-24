@@ -3,10 +3,8 @@ package com.ai.aigent.agent.model;
 import com.ai.aigent.entity.domin.AgentMessage;
 import lombok.AllArgsConstructor;
 import lombok.Data;
-import org.springframework.ai.chat.messages.AssistantMessage;
 
 import java.util.Date;
-import java.util.List;
 @Data
 public class AgentMessagePayload {
     private String role;          // user | assistant | tool
@@ -23,7 +21,7 @@ public class AgentMessagePayload {
         private String args;
         private String result;
     }
-    private void saveAgentMessage(Long sessionId, AgentMessage payload, int tokens) {
+    private void saveAgentMessage(String sessionId, AgentMessage payload, int tokens) {
         AgentMessage msg = new AgentMessage();
         msg.setSessionId(sessionId);
         msg.setType(payload.getType());

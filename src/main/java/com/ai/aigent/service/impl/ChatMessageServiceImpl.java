@@ -29,11 +29,12 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     implements ChatMessageService {
     @Override
     public void saveAssistantMessage(String conversationId, String message, Integer token,Integer cost,
-     Integer promptTokens,  Integer completionTokens,Integer cachedTokens
+     Integer promptTokens,  Integer completionTokens,Integer cachedTokens,Long thinkingTime
     ) {
             AssistantMessage build = AssistantMessage.builder().content(message).build();
             ChatMessage entity = new ChatMessage();
             entity.setConversationId(conversationId);
+            entity.setThinkingTime(thinkingTime.intValue());
             entity.setCreateTime(LocalDateTime.now());
             entity.setPayload(KryoUtils.serialize(build));
             entity.setIsDeleted(0);entity.setToken(token);entity.setCost(cost);
@@ -50,7 +51,8 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     }
     @Override
     public void updateMessage(String conversationId, String message, String messageId, String type, Integer token,Integer cost,
-                              Integer promptTokens,  Integer completionTokens,Integer cachedTokens) {
+                              Integer promptTokens,  Integer completionTokens,Integer cachedTokens,
+                                         Long thinkingTime) {
         if(type=="user"){
             this.lambdaUpdate().eq(ChatMessage::getId, messageId)
                 .set(ChatMessage::getPayload, KryoUtils.serialize(new UserMessage(message)))
@@ -60,6 +62,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             this.lambdaUpdate().eq(ChatMessage::getId, messageId)
                 .set(ChatMessage::getPayload, KryoUtils.serialize(new AssistantMessage(message)))
                     .set(ChatMessage::getCost,cost)
+                    .set(ChatMessage::getThinkingTime,thinkingTime.intValue())
                     .setSql("prompt_tokens = prompt_tokens + "+promptTokens)
                     .setSql("completion_tokens = completion_tokens + "+completionTokens)
                     .setSql("cached_tokens = cached_tokens + "+cachedTokens)

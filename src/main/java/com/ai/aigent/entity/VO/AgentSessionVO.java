@@ -6,7 +6,7 @@ import java.util.Date;
 
 @Data
 public class AgentSessionVO {
-    private Long sessionId;
+    private String sessionId;
     private String title;
     private String lastMessage;
     private Date createTime;

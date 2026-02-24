@@ -16,4 +16,8 @@ public class ChatSendReq {
     private Boolean isSearch;
     private Boolean isGenerateFile;
     private Boolean isEcharts;
+    private String style;
+    private String model;
+    private Double temperature;
+    private Double topP;
 }

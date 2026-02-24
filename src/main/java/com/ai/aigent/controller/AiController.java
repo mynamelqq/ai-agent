@@ -36,8 +36,6 @@ public class AiController {
     @Resource
     private CodeApp codeApp;
     @Resource
-    private ToolCallback[]toolCallBacks;
-    @Resource
     @Qualifier("dashScopeChatModel")
     private ChatModel dashscopeChatModel;
     @Resource
@@ -114,22 +112,20 @@ public class AiController {
     @GetMapping("/chat/title")
     public Result<Map<String, String>> getChatItemTitle(String message, HttpServletRequest request, String ChatId)
     {
-        String s = codeApp.genTitle(message);//已登录
-        Object token = request.getHeader("Authorization");
-        if(token!=null){
-            String J = JWTUtils.getUserId(token.toString());
-            if(!JWTUtils.validateToken(J)){
-                Conversation conversation = new Conversation();
-                conversation.setTitle(s);
-                conversation.setCreatedAt(LocalDateTime.now());
-                conversation.setUpdatedAt(LocalDateTime.now());
-                conversation.setId(ChatId);
-                conversation.setPinned(false);
-                conversation.setUser_id(Long.parseLong(JWTUtils.getUserId(token.toString())));
-                conversationService.save(conversation);
-            }
+        String userId = usersService.getLoginUser(request);
+        if(userId.isBlank()){
+            return Result.error("请先登录");
         }
-        return Result.success(Map.of("title",s));
+        String title= codeApp.genTitle(message);
+        Conversation conversation = new Conversation();
+        conversation.setTitle(title);
+        conversation.setCreatedAt(LocalDateTime.now());
+        conversation.setUpdatedAt(LocalDateTime.now());
+        conversation.setId(ChatId);
+        conversation.setPinned(false);
+        conversation.setUser_id(userId);
+        conversationService.save(conversation);
+        return Result.success(Map.of("title",title));
     }
     @PostMapping("/ocr")
     public Result<String> getOcr(MultipartFile multipartFile)

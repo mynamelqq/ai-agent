@@ -9,6 +9,16 @@
       "env": {
         "AMAP_MAPS_API_KEY": "c72aee1175fa19fc25b4f9704eef0d01"
       }
+    },
+    "amap-ui": {
+      "command": "npx.cmd",
+      "args": [
+        "-y",
+        "@amap/amap-ui-mcp-server"
+      ],
+      "env": {
+        "AMAP_UI_API_KEY": "c72aee1175fa19fc25b4f9704eef0d01"
+      }
     }
   }
 }

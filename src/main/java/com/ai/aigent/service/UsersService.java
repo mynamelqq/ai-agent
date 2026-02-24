@@ -2,6 +2,7 @@ package com.ai.aigent.service;
 
 import com.ai.aigent.entity.domin.Users;
 import com.baomidou.mybatisplus.extension.service.IService;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
 * @author MECHREVO
@@ -9,4 +10,5 @@ import com.baomidou.mybatisplus.extension.service.IService;
 * @createDate 2026-02-02 13:24:35
 */
 public interface UsersService extends IService<Users> {
+    String getLoginUser(HttpServletRequest request);
 }

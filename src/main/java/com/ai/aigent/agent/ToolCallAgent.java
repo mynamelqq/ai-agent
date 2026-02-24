@@ -22,14 +22,12 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.cglib.core.CollectionUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -65,6 +63,9 @@ public  class ToolCallAgent extends ReActAgent{
             List<Media> mediaList = new ArrayList<>();
             AtomicReference<Usage> finalUsage = new AtomicReference<>();
             AtomicReference<Integer> token = new AtomicReference<>(0);
+             AtomicReference<Boolean>isThinking = new AtomicReference<>(false);
+            AtomicReference<Long>thinkingStartTime=new AtomicReference<>(System.currentTimeMillis());
+            AtomicReference<Long>thinkingEndTime=new AtomicReference<>(System.currentTimeMillis());
             AtomicReference<Integer> prompt_tokens = new AtomicReference<>(0);
             AtomicReference<Integer> completion_tokens = new AtomicReference<>(0);
             AtomicReference<Integer> cached_tokens = new AtomicReference<>(0);
@@ -86,22 +87,33 @@ public  class ToolCallAgent extends ReActAgent{
                     }
                     lastResponse.set(chatResponse);
                     var output = chatResponse.getResult().getOutput();
-                    String reasoning = Optional.ofNullable(output.getMetadata())
-                            .map(m -> m.get("reasoningContent"))
+                    var result = chatResponse.getResult();
+                    var msg = result.getOutput();
+                    Optional.of(msg.getMetadata())
+                            .map(meta -> meta.get("reasoningContent"))
                             .map(Object::toString)
-                            .orElse("");
-                    if (!reasoning.isEmpty()) {
-                        reasoningBuf.append(reasoning);
-                        emit(AgentEvent.reasoning(reasoning));
-                    }
+                            .ifPresent((reasoning)->{
+                                if(reasoning.isEmpty())return;
+                                reasoningBuf.append(reasoning);
+                                emit(AgentEvent.reasoning(reasoning));
+                                if(!isThinking.get()){
+                                    isThinking.set(true);
+                                    thinkingStartTime.set(System.currentTimeMillis());
+                                }
+                            });
                     String text = output.getText();
-                    if (StringUtils.isNotBlank(text)) {
+                    if (text != null && !text.isEmpty()) {
+                        if(isThinking.get()){
+                            isThinking.set(false);
+                            thinkingEndTime.set(System.currentTimeMillis());
+                        }
                         textBuf.append(text);
                         emit(AgentEvent.text(text));
                     }
                 })
                 .doOnComplete(() -> {
                     endTime.set(System.currentTimeMillis());
+                    if(isThinking.get())thinkingEndTime.set(System.currentTimeMillis());
                     Usage usage = finalUsage.get();
                     if (usage == null) return;
                     if (usage.getPromptTokens() != null) prompt_tokens.set(usage.getPromptTokens());
@@ -123,7 +135,8 @@ public  class ToolCallAgent extends ReActAgent{
                         agentMessagePayload.setContent(textBuf.toString());
                         agentMessagePayload.setReasoning(reasoningBuf.toString());
                         getAgentMessageService().saveAgentMessage(getSessionId(), AgentMessageEnum.ASSISTANT.getValue(),
-                                agentMessagePayload,0);
+                                agentMessagePayload,token.get(),
+                                (thinkingEndTime.get()-thinkingStartTime.get()),(endTime.get()-startTime.get()),prompt_tokens.get(), completion_tokens.get(),cached_tokens.get());
                     } else if (signal == SignalType.CANCEL) {
                         if (getCancelled()) {
                             // 主动取消：保存已有内容
@@ -146,7 +159,8 @@ public  class ToolCallAgent extends ReActAgent{
                                 agentMessagePayload.setContent(textBuf.toString());
                                 agentMessagePayload.setReasoning(reasoningBuf.toString());
                                 getAgentMessageService().saveAgentMessage(getSessionId(), AgentMessageEnum.ASSISTANT.getValue(),
-                                agentMessagePayload,0);
+                                agentMessagePayload,token.get(),
+                                        (thinkingEndTime.get()-thinkingStartTime.get()),(endTime.get()-startTime.get()),prompt_tokens.get(),completion_tokens.get(),cached_tokens.get());
                             }
                         }
                     }
@@ -154,7 +168,6 @@ public  class ToolCallAgent extends ReActAgent{
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe());
-
         // 等待完成（替代 block()），设置超时防止永久阻塞
         try {
             latch.await(5, TimeUnit.MINUTES);
@@ -162,10 +175,10 @@ public  class ToolCallAgent extends ReActAgent{
             Thread.currentThread().interrupt();
             log.warn("Agent 等待被中断");
         }
-
         // 拿最后一个 response 继续处理工具调用
         this.toolCallChatResponse = lastResponse.get();
         if (toolCallChatResponse == null) return false;
+
         AssistantMessage output = toolCallChatResponse.getResult().getOutput();
         List<AssistantMessage.ToolCall> toolCalls = output.getToolCalls();
             // 把助手消息加入历史
@@ -179,7 +192,7 @@ public  class ToolCallAgent extends ReActAgent{
                 callPayload.setToolName(tc.name());
                 callPayload.setToolArgs(tc.arguments());  // JSON字符串
                 getAgentMessageService().saveAgentMessage(
-                getSessionId(), AgentMessageEnum.TOOL.getValue(), callPayload, 0);
+                getSessionId(), AgentMessageEnum.TOOL.getValue(), callPayload, 0,0L,0L,0,0,0);
                 emit(AgentEvent.toolCall(tc.name(), tc.arguments()));
             }
         );
@@ -195,14 +208,12 @@ public  class ToolCallAgent extends ReActAgent{
     @Override
     public String act() {//工具调用没有ai
         if (!toolCallChatResponse.hasToolCalls()) return "不需要调用工具";
-
+        long startTime=System.currentTimeMillis();
         Prompt prompt = new Prompt(getMessageList(), chatOptions);
         ToolExecutionResult result = toolCallingManager.executeToolCalls(prompt, toolCallChatResponse);
         setMessageList(result.conversationHistory());
-
         ToolResponseMessage toolResponseMessage = (ToolResponseMessage)
                 CollectionUtil.getLast(result.conversationHistory());
-
         // 推送工具结果给前端
         toolResponseMessage.getResponses().forEach(r -> {
             AgentMessagePayload resultPayload = new AgentMessagePayload();
@@ -210,8 +221,11 @@ public  class ToolCallAgent extends ReActAgent{
             resultPayload.setToolName(r.name());
             resultPayload.setToolResult(r.responseData());
             getAgentMessageService().saveAgentMessage(
-            getSessionId(), AgentMessageEnum.TOOL_RESULT.getValue(), resultPayload, 0);
-            emit(AgentEvent.toolResult(r.name(), r.responseData()));
+            getSessionId(), AgentMessageEnum.TOOL_RESULT.getValue(),
+                    resultPayload, 0,0L,(System.currentTimeMillis()-startTime),0,0,0);
+            Map<String,Object>meta=new HashMap<>();
+            meta.put("cost",(System.currentTimeMillis()-startTime));
+            emit(AgentEvent.toolResult(r.name(), r.responseData(), meta));
         });
         // 检查终止工具
         boolean isTerminated = toolResponseMessage.getResponses().stream()
