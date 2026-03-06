@@ -14,9 +14,6 @@ import java.time.LocalDateTime;
 @TableName(value ="user_usage_daily")
 @Data
 public class UserUsageDaily {
-    /**
-     *
-     */
     @TableId(type = IdType.AUTO)
     private String id;
     private String userId;
@@ -25,5 +22,7 @@ public class UserUsageDaily {
     private LocalDateTime time;
     private Integer promptTokens;
     private Integer cachedTokens;
+    private String chatModel;
+    private String from;//来自对话还是智能体
     private Integer completionTokens;
 }

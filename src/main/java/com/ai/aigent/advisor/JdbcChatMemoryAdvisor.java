@@ -28,6 +28,7 @@ public  class JdbcChatMemoryAdvisor implements ChatMemory {
     @Override
     public List<Message> get(String conversationId) {
         return chatMessageService.loadRecentMessages(conversationId, AiCientConstans.SHORT_MEMORY_LENGTH);
+
     }
 
 

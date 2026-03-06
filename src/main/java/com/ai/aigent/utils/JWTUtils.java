@@ -103,33 +103,15 @@ public class JWTUtils {
         // 刷新token有效期更长（7天）
         return createToken(ISSUER, 7 * 24 * 60 * 60 * 1000L, claims);
     }
-
     /**
      * 解析JWT
      */
     public static Claims parseToken(String token) {
-        try {
             return Jwts.parser()
                     .setSigningKey(SECRET_KEY)
                     .parseClaimsJws(token)
                     .getBody();
-        } catch (ExpiredJwtException e) {
-
-            throw new RuntimeException("Token已过期", e);
-        } catch (UnsupportedJwtException e) {
-
-            throw new RuntimeException("不支持的Token格式", e);
-        } catch (MalformedJwtException e) {
-
-            throw new RuntimeException("Token格式错误", e);
-        } catch (SignatureException e) {
-
-            throw new RuntimeException("Token签名验证失败", e);
-        } catch (IllegalArgumentException e) {
-            throw new RuntimeException("Token参数错误", e);
-        }
     }
-
     /**
      * 验证JWT是否有效
      */
@@ -141,7 +123,6 @@ public class JWTUtils {
             return false;
         }
     }
-
     /**
      * 从Token中获取指定claim
      */
@@ -149,21 +130,18 @@ public class JWTUtils {
         Claims claims = parseToken(token);
         return claimsResolver.apply(claims);
     }
-
     /**
      * 获取用户ID
      */
     public static String getUserId(String token) {
         return getClaimFromToken(token, claims -> claims.get("userId", String.class));
     }
-
     /**
      * 获取用户名
      */
     public static String getUsername(String token) {
         return getClaimFromToken(token, claims -> claims.get("username", String.class));
     }
-
     /**
      * 获取用户角色
      */
@@ -176,28 +154,24 @@ public class JWTUtils {
             return new String[0];
         });
     }
-
     /**
      * 获取Token类型
      */
     public static String getTokenType(String token) {
         return getClaimFromToken(token, claims -> claims.get("type", String.class));
     }
-
     /**
      * 获取签发时间
      */
     public static Date getIssuedAt(String token) {
         return getClaimFromToken(token, Claims::getIssuedAt);
     }
-
     /**
      * 获取过期时间
      */
     public static Date getExpiration(String token) {
         return getClaimFromToken(token, Claims::getExpiration);
     }
-
     /**
      * 检查Token是否即将过期（在指定时间内）
      */
@@ -206,7 +180,6 @@ public class JWTUtils {
         long timeLeft = expiration.getTime() - System.currentTimeMillis();
         return timeLeft <= thresholdMillis && timeLeft > 0;
     }
-
     /**
      * 检查Token是否已过期
      */
@@ -214,7 +187,6 @@ public class JWTUtils {
         Date expiration = getExpiration(token);
         return expiration.before(new Date());
     }
-
     /**
      * 从Authorization头中提取Token
      */
@@ -228,17 +200,13 @@ public class JWTUtils {
     /**
      * 刷新Token（创建新的Token，保留原有claims）
      */
-    public static String refreshToken(String oldToken) {
-        Claims claims = parseToken(oldToken);
+    public static String refreshToken(String refreshToken) {
+        Claims claims = parseToken(refreshToken);
 
-        // 移除jti和iat，生成新的
-        claims.remove("jti");
-        claims.remove("iat");
-        claims.remove("exp");
+        String userId = claims.get("userId", String.class);
 
-        return createToken(claims);
+        return createUserToken(userId, null);
     }
-
     /**
      * 验证Token类型
      */

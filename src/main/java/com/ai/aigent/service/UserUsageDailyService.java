@@ -16,7 +16,7 @@ public interface UserUsageDailyService extends IService<UserUsageDaily> {
     void checkAndConsume(String userId, String type);
     long getDailyLimit(String userId, String type);
 
-    void addUsage(String userId, String type, long tokens,int promptTokens,int  completionTokens,int cachedTokens) ;
+    void addUsage(String userId, String type, long tokens,int promptTokens,int  completionTokens,int cachedTokens,String from,String model) ;
 
     void addTotalUsage(String userId, String type, long tokens);
     List<Map<String, Object>> statByHour(String userId, LocalDate date);

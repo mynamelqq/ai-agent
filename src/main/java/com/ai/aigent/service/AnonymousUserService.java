@@ -12,4 +12,5 @@ import jakarta.servlet.http.HttpServletRequest;
 public interface AnonymousUserService extends IService<AnonymousUser> {
      public AnonymousUser getOrCreate(String anonId, String fingerprintHash, String ip);
      AnonymousUser getById(HttpServletRequest req);
+      Boolean hasAnnoID(HttpServletRequest req);
 }

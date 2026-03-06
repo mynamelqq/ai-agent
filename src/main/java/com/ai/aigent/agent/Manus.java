@@ -5,22 +5,30 @@ import com.ai.aigent.advisor.MySimpleLoggerAdvisor;
 import com.ai.aigent.agent.model.AgentSessionRegistry;
 import com.ai.aigent.service.AgentMessageService;
 import com.ai.aigent.service.AgentSessionService;
+import com.ai.aigent.service.AiAttachmentService;
 import com.ai.aigent.service.UserUsageDailyService;
+import com.ai.aigent.utils.AttachmentReaderUtil;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 @Component
 @Scope("prototype")  // 每次注入/获取都是新实例
 public class Manus extends ToolCallAgent{
 
-    public Manus(ToolCallback[] availableTools, @Qualifier("dashScopeChatModel") ChatModel dashscopeChatModel
+    public Manus(List<ToolCallback>availableTools, @Qualifier("dashScopeChatModel") ChatModel dashscopeChatModel
             , AgentSessionService agentSessionService, AgentMessageService agentMessageService, AgentSessionRegistry
-                 agentSessionRegistry, UserUsageDailyService dailyService) {
-        super(availableTools,dailyService);
+                 agentSessionRegistry, UserUsageDailyService dailyService, ToolCallbackProvider toolCallbackProvider, AiAttachmentService attachmentService,
+                 AttachmentReaderUtil attachmentReaderUtil) {
+        super(availableTools,dailyService,toolCallbackProvider);
+        this.setAttachmentReaderUtil(attachmentReaderUtil);
+        this.setAttachmentService(attachmentService);
         this.setName("Manus");
         String SYSTEM_PROMPT = """
         You are Manus, an all-capable AI assistant, aimed at solving any task presented by the user.

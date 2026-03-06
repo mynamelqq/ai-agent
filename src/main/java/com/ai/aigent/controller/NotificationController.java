@@ -35,15 +35,23 @@ public class NotificationController {
     }
     @PostMapping("/{id}/read")
     public void read(@PathVariable Long id, String userId) {
-
+        if(userId.isBlank()){
+            throw new IllegalArgumentException("用户未登录");
+        }
         notificationService.read(Long.valueOf(userId), id);
     }
     @PostMapping("/read-all")
     public void readAll(String userId) {
+         if(userId.isBlank()){
+            throw new IllegalArgumentException("用户未登录");
+        }
         notificationService.readAll(Long.valueOf(userId));
     }
     @GetMapping("/unread-count")
     public long unreadCount(String userId) {
+         if(userId.isBlank()){
+            throw new IllegalArgumentException("用户未登录");
+        }
         return notificationService.unreadCount(Long.valueOf(userId));
     }
 

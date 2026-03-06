@@ -1,21 +1,21 @@
 package com.ai.aigent.controller;
 
 import cn.hutool.core.lang.UUID;
+import com.ai.aigent.constant.AiCientConstans;
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.VO.UserVo;
+import com.ai.aigent.entity.domin.UserSetting;
 import com.ai.aigent.entity.domin.Users;
 import com.ai.aigent.exception.BusinessException;
 import com.ai.aigent.mapper.UsersMapper;
+import com.ai.aigent.service.UserSettingService;
 import com.ai.aigent.utils.JWTUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.Map;
@@ -26,6 +26,8 @@ public class UserController {
 
     @Autowired
     private UsersMapper usersMapper;
+    @Autowired
+    private UserSettingService userSettingService;
     @PostMapping("/register")
     public Result<?> register(@RequestBody Map<String, String> body,HttpServletRequest request) {
         String email = body.get("email");
@@ -46,8 +48,20 @@ public class UserController {
         user.setPassword(password);
         user.setCreatedAt(LocalDateTime.now());
         usersMapper.insert(user);
+        userSettingService.createDefaultSetting(user.getId());
         return Result.success();
     }
+     @PostMapping("/setting/update")
+    public Result<?> update(@RequestBody UserSetting setting) {
+        userSettingService.updateUserSetting(setting);
+        return Result.success();
+    }
+    @GetMapping("/setting/{userId}")
+    public Result<UserSetting> get(@PathVariable Long userId) {
+        return Result.success(userSettingService.getByUserId(userId));
+    }
+    private static final long DEFAULT_EXPIRATION = 24 * 60 * 60 * 1000L; // 24小时
+    private static final String ISSUER = "ai-agent-system";
     @PostMapping("/login")
     public Result<UserVo> login(@RequestBody Map<String, String> body) {
         String email = body.get("username");
@@ -65,8 +79,12 @@ public class UserController {
         UserVo userVo = new UserVo();
         BeanUtils.copyProperties(user, userVo);
         userVo.setId(user.getId().toString());
-        String token = JWTUtils.createRefreshToken(user.getId().toString());
-        userVo.setToken(token);
+       String accessToken = JWTUtils.createUserToken(
+                user.getId().toString(),
+                user.getUsername()
+        );
+        userVo.setAccessToken( accessToken);
+        userVo.setRefreshToken(JWTUtils.createRefreshToken(user.getId().toString()));
         return Result.success(userVo);
     }
     @PostMapping("/update")
@@ -112,13 +130,12 @@ public class UserController {
     @Operation(summary = "刷新Token", description = "使用刷新Token获取新的访问Token")
     public Result<String> refreshToken(@RequestBody Map<String, String> requestBody) {
         String refreshToken = requestBody.get("refreshToken");
-        if(!JWTUtils.validateToken(refreshToken))
-        {
-            throw new BusinessException(202,"无效token");
+        if (!JWTUtils.validateToken(refreshToken) ||
+            !"refresh".equals(JWTUtils.getTokenType(refreshToken))) {
+            throw new BusinessException(202,"无效refreshToken");
         }
         // 获取用户信息
         String userId = JWTUtils.getUserId(refreshToken);
-        String username = JWTUtils.getUsername(refreshToken);
         // 验证用户是否存在
         Users user = usersMapper.selectById(userId);
         if (user == null) {

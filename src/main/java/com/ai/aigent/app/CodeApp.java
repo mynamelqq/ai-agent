@@ -9,17 +9,17 @@ import com.ai.aigent.constant.AiConstants;
 import com.ai.aigent.entity.VO.ChatResult;
 import com.ai.aigent.entity.domin.AiAttachment;
 import com.ai.aigent.entity.domin.ChatMessage;
+import com.ai.aigent.entity.domin.UserSetting;
 import com.ai.aigent.entity.dto.ChatSendReq;
 import com.ai.aigent.entity.dto.RegenDTO;
-import com.ai.aigent.service.AiAttachmentService;
-import com.ai.aigent.service.ChatMessageService;
-import com.ai.aigent.service.UserUsageDailyService;
+import com.ai.aigent.service.*;
 import com.ai.aigent.tools.FileOperationTool;
 import com.ai.aigent.tools.ImageGenerateTool;
 import com.ai.aigent.tools.WebSearchTool;
 import com.ai.aigent.utils.AttachmentReaderUtil;
 import com.ai.aigent.utils.KryoUtils;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qcloud.cos.model.COSObject;
 import io.swagger.v3.oas.models.security.SecurityScheme;
@@ -33,10 +33,12 @@ import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.chat.prompt.DefaultChatOptionsBuilder;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
@@ -53,6 +55,7 @@ import org.springframework.util.MimeTypeUtils;
 import org.springframework.util.StreamUtils;
 import prompt.ChatPrompt;
 import prompt.SystemPrompt;
+import prompt.TonePrompt;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -71,17 +74,18 @@ import java.util.stream.Collectors;
 @Component
 @Slf4j
 public class CodeApp {
-    private final ChatClient.Builder chatClientBuilder;
+    private ChatClient.Builder chatClientBuilder;
     private final JdbcChatMemoryAdvisor chatMemory;
-
+    @Resource
+    private ToolCallbackProvider toolCallbackProvider;
     //    @Autowired
 //    @Resource
 //    private OllamaChatModel ollamaChatModel;
     @Resource
     @Qualifier("openAiChatModel")
     private OpenAiChatModel openAiChatModel;
-
-
+    private DashScopeChatOptions.DashScopeChatOptionsBuilder chatOptionsBuilder;
+//    private OpenAiChatOptions.Builder chatOptionsBuilder;
     @Resource
     @Qualifier("zhiPuAiChatModel")
     private ZhiPuAiChatModel zhiPuAiChatModel;
@@ -92,6 +96,10 @@ public class CodeApp {
     private DashScopeChatModel dashScopeChatModel;
     @Autowired
     private UserUsageDailyService dailyService;
+    @Autowired
+    private UsersService usersService;
+    @Autowired
+    private UserSettingService userSettingService;
 
     public CodeApp(@Qualifier("dashScopeChatModel") ChatModel dashscpoeChatModel, JdbcChatMemoryAdvisor chatMemory, SummaryMemoryAdvisor summaryMemoryAdvisor,VectorStoreMemoryAdvisor vectorStoreMemoryAdvisor) {
         this.chatMemory=chatMemory;
@@ -114,7 +122,7 @@ public class CodeApp {
 //                .defaultSystem(SystemPrompt.GENERAL_SYSTEM_PROMPT)
                 .defaultAdvisors(
                         MessageChatMemoryAdvisor.builder(chatMemory).build(),
-                    vectorStoreMemoryAdvisor,
+//                    vectorStoreMemoryAdvisor,
 //////                        new SafeGuardAdvisor(forbiddenWords,"内容涉及敏感信息，请更换表述",-1),
 //                        summaryMemoryAdvisor,
                         new MySimpleLoggerAdvisor()
@@ -246,17 +254,11 @@ public class CodeApp {
 //            return Flux.concat(prefixFlux, aiFlux)
 //            .onErrorResume(e -> Flux.empty());
 //        }
-    public ChatOptions thinking()
+    public DashScopeChatOptions thinking()
     {
-        return OpenAiChatOptions.builder()
-                .model("openai/gpt-oss-120b")
-                .temperature(0.7)
-                .build();
-//        return  DashScopeChatOptions.builder()
-//                    .model("qwen/qwen3-235b-a22b-fp8")
-//                    .enableThinking(true)
-//                    .temperature(0.7)
-//                    .build();
+        return DashScopeChatOptions.builder()
+                    .model("qwq-plus")
+                    .enableThinking(true).build();
 ////            ZhiPuAiChatOptions zhiPuAiChatOptions = ZhiPuAiChatOptions.builder()
 ////                    .model("glm-4.7-FlashX")
 ////                    .temperature(0.6)
@@ -264,12 +266,14 @@ public class CodeApp {
 ////                    .build();
     }
     List<ToolCallback>toolCallbackList;
+
     @Transactional
    public Flux<ChatResult> doChatStream(ChatSendReq chatSendReq, String userId, String type) {
         String chatId = chatSendReq.getChatId();
         Long messageId = Long.parseLong(chatSendReq.getMessageId());
         String message = chatSendReq.getMessage();
-
+        UserSetting setting;
+        AtomicReference<Boolean>isToolAuto=new AtomicReference<>(true);
         // 1️⃣ 前缀 SSE：附件加载骨架
         Flux<ChatResult> prefixFlux = Flux.empty();
         if (!chatSendReq.getAttachments().isEmpty()) {
@@ -277,13 +281,48 @@ public class CodeApp {
             attachmentChat.setText("<<<ATTACHMENT_LOADING>>>");
             prefixFlux = Flux.just(attachmentChat);
         }
-
+        chatOptionsBuilder= new DashScopeChatOptions.DashScopeChatOptionsBuilder();
+//        chatOptionsBuilder=OpenAiChatOptions.builder();
+        String style= "";
+        String extendedPrompt="";
+        if(type.equals("user"))
+        {
+             setting= userSettingService.getByUserId(Long.valueOf(userId));
+             if(setting!=null){
+                 chatOptionsBuilder.temperature(setting.getTemperature())
+//                         .frequencyPenalty(setting.getFrequencyPenalty())
+//                         .reasoningEffort(setting.getReasoningEffort())
+//                         .topK(setting.getTopk())
+//                         .repetitionPenalty(setting.getFrequencyPenalty())
+                         .model(setting.getChatModel());//maxTokens
+                 style = switch (setting.getTone()) {
+                     case "professional" -> TonePrompt.professional;
+                     case "detailed" -> TonePrompt.detailed;
+                     case "teaching" -> TonePrompt.teaching;
+                     case "friendly"-> TonePrompt.friendly;
+                     case "funny"-> TonePrompt.funny;
+                     case "neutral"-> TonePrompt.neutral;
+                     case "sharp"-> TonePrompt.sharp;
+                     case "critical"-> TonePrompt.critical;
+                     case "poisonous"->TonePrompt.poisonous;
+                     default -> TonePrompt.concise;
+                 };
+                 if(setting.getIsSummary()){
+                     chatClientBuilder.defaultAdvisors(summaryMemoryAdvisor);
+                 }
+                 if(setting.getIsExtend()){
+                     extendedPrompt=SystemPrompt.ExtendPrompt;
+                 }
+                 if(setting.getToolMode().equals("off")){isToolAuto.set(false);}
+             }
+        } else {
+            setting = null;
+        }
         // 2️⃣ Thinking 模式配置
         if (Boolean.TRUE.equals(chatSendReq.getIsThinking())) {
-            chatClientBuilder.defaultOptions(thinking());
+            chatOptionsBuilder.enableThinking( true);
         }
         ChatClient chatClient = chatClientBuilder.build();
-
         // 3️⃣ 动态工具挂载
         ToolCallback[] localToolCallbacks;
         if (Boolean.TRUE.equals(chatSendReq.getIsImageGen())) {
@@ -309,8 +348,8 @@ public class CodeApp {
         AtomicReference<Long>thinkingStartTime=new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long>thinkingEndTime=new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Integer> cached_tokens = new AtomicReference<>(0);
-        AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
+        AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
         // 5️⃣ 响应式读取附件
         Mono<String> attachmentMono = Mono.fromCallable(() -> {
             if (chatSendReq.getAttachments().isEmpty()) return "";
@@ -329,7 +368,7 @@ public class CodeApp {
                     continue;
                 }
                 attachmentContent.append(
-                        attachmentReaderUtil.readContent(aiAttachment, messageId.toString(), chatId, message)
+                        attachmentReaderUtil.readContent(aiAttachment)
                 ).append("\n");
             }
             return attachmentContent.toString();
@@ -338,15 +377,14 @@ public class CodeApp {
         // 6️⃣ system prompt
         String system = chatSendReq.getIsEcharts()
                 ? SystemPrompt.ECHARTS_SYSTEM_PROMPT
-                : SystemPrompt.GENERAL_SYSTEM_PROMPT;
-
+                : SystemPrompt.GENERAL_SYSTEM_PROMPT+style+extendedPrompt;
         // 7️⃣ Sink：解耦 AI 流和 SSE 连接
         Sinks.Many<ChatResult> sink = Sinks.many().unicast().onBackpressureBuffer();
         Map<String, Object> toolContext = Collections.singletonMap("chatId", chatId);
 
         // 8️⃣ 后台独立订阅 AI 流，生命周期与 SSE 无关
         Disposable disposable = attachmentMono.<ChatResponse>flatMapMany(attachmentContent -> {
-            var promptBuilder = chatClient.prompt()
+            var promptBuilder = chatClient.prompt().options(chatOptionsBuilder.build())
                     .user(promptUserSpec -> promptUserSpec
                             .text(message)
                             .media(mediaList.toArray(new Media[0])))
@@ -354,7 +392,10 @@ public class CodeApp {
                     .advisors(advisor -> advisor
                             .param(ChatMemory.CONVERSATION_ID, chatId)
                             .param("messageId", messageId));
-            if (localToolCallbacks != null) {
+            if(setting!=null&&setting.getUseMcp()){//useMcp
+                promptBuilder.toolCallbacks(toolCallbackProvider);
+            }
+            if (localToolCallbacks != null&&isToolAuto.get()) {
                 promptBuilder.toolCallbacks(localToolCallbacks);
             }
             return promptBuilder
@@ -431,7 +472,7 @@ public class CodeApp {
                 if (!finalAnswer.isEmpty()) {
                     saveAndRecord(chatId, userId, type, finalAnswer, token,
                             prompt_tokens, completion_tokens, cached_tokens, startTime, endTime,
-                            (thinkingEndTime.get()-thinkingStartTime.get()));
+                            (thinkingEndTime.get()-thinkingStartTime.get()),(setting!=null?setting.getChatModel():"qwq-plus"));
                 }
                 sink.tryEmitComplete();
 
@@ -439,6 +480,7 @@ public class CodeApp {
                 if (cancelTokenRegistry.isCancelled(chatId)) {
                     endTime.set(System.currentTimeMillis());
                     Usage usage = finalUsage.get();
+                    thinkingEndTime.set(System.currentTimeMillis());
                     if (usage == null) return;
                     if (usage.getPromptTokens() != null) prompt_tokens.set(usage.getPromptTokens());
                     if (usage.getCompletionTokens() != null) completion_tokens.set(usage.getCompletionTokens());
@@ -456,7 +498,7 @@ public class CodeApp {
                     if (!finalAnswer.isEmpty()) {
                         saveAndRecord(chatId, userId, type, finalAnswer, token,
                                 prompt_tokens, completion_tokens, cached_tokens, startTime,
-                                endTime,(thinkingEndTime.get()-thinkingStartTime.get()));
+                                endTime,(thinkingEndTime.get()-thinkingStartTime.get()),(setting!=null?setting.getChatModel():"qwq-plus"));
                     }
                     sink.tryEmitComplete();
                 }
@@ -489,10 +531,10 @@ public class CodeApp {
     private void saveAndRecord(String chatId, String userId, String type, String finalAnswer,
             AtomicReference<Integer> token, AtomicReference<Integer> prompt_tokens,
             AtomicReference<Integer> completion_tokens, AtomicReference<Integer> cached_tokens,
-            AtomicReference<Long> startTime, AtomicReference<Long> endTime,Long thinkingTime) {
+            AtomicReference<Long> startTime, AtomicReference<Long> endTime,Long thinkingTime,String model) {
         dailyService.addTotalUsage(userId, type, token.get());
         dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),
-                              completion_tokens.get(), cached_tokens.get());
+                              completion_tokens.get(), cached_tokens.get(),"chat",model);
         chatMessageService.saveAssistantMessage(chatId, finalAnswer, token.get(),
                 (int) (endTime.get() - startTime.get()),prompt_tokens.get(), completion_tokens.get(), cached_tokens.get(),
                 thinkingTime);
@@ -503,8 +545,47 @@ public class CodeApp {
         ChatMessage chatMessage = chatMessageService.getById(userMessageId);//获取用户消息
         UserMessage userMessage = KryoUtils.deserialize(chatMessage.getPayload());
         String chatId = regenDTO.getChatId();
+        UserSetting  setting;
+        AtomicReference<Boolean>isToolAuto=new AtomicReference<>(true);
+        chatOptionsBuilder= new DashScopeChatOptions.DashScopeChatOptionsBuilder();
+//        chatOptionsBuilder=OpenAiChatOptions.builder();
+        String style= "";
+        String extendedPrompt="";
         String message =userMessage.getText();
         List<AiAttachment> list = attachmentService.list(new LambdaQueryWrapper<AiAttachment>().eq(AiAttachment::getChatId, userMessageId));
+        if(type.equals("user"))
+        {
+             setting= userSettingService.getByUserId(Long.valueOf(userId));
+             if(setting!=null){
+                 chatOptionsBuilder.temperature(setting.getTemperature())
+//                         .frequencyPenalty(setting.getFrequencyPenalty())
+//                         .reasoningEffort(setting.getReasoningEffort())
+//                         .topK(setting.getTopk())
+//                         .repetitionPenalty(setting.getFrequencyPenalty())
+                         .model(setting.getChatModel());//maxTokens
+                 style = switch (setting.getTone()) {
+                     case "professional" -> TonePrompt.professional;
+                     case "detailed" -> TonePrompt.detailed;
+                     case "teaching" -> TonePrompt.teaching;
+                     case "friendly"-> TonePrompt.friendly;
+                     case "funny"-> TonePrompt.funny;
+                     case "neutral"-> TonePrompt.neutral;
+                     case "sharp"-> TonePrompt.sharp;
+                     case "critical"-> TonePrompt.critical;
+                     case "poisonous"->TonePrompt.poisonous;
+                     default -> TonePrompt.concise;
+                 };
+                 if(setting.getIsSummary()){
+                     chatClientBuilder.defaultAdvisors(summaryMemoryAdvisor);
+                 }
+                 if(setting.getIsExtend()){
+                     extendedPrompt=SystemPrompt.ExtendPrompt;
+                 }
+                 if(setting.getToolMode().equals("off")){isToolAuto.set(false);}
+             }
+        } else {
+            setting = null;
+        }
         // 1️⃣ 前缀 SSE：附件加载骨架
         Flux<ChatResult> prefixFlux = Flux.empty();
         if (!list.isEmpty()) {
@@ -560,15 +641,16 @@ public class CodeApp {
                     continue;
                 }
                 attachmentContent.append(
-                        attachmentReaderUtil.readContent(aiAttachment, userMessageId, chatId, message)
+                        attachmentReaderUtil.readContent(aiAttachment)
                 ).append("\n");
             }
             return attachmentContent.toString();
         }).subscribeOn(Schedulers.boundedElastic());
+
         // 6️⃣ system prompt
         String system = chatMessage.getIsEcharts()
-                ? SystemPrompt.ECHARTS_SYSTEM_PROMPT
-                : SystemPrompt.GENERAL_SYSTEM_PROMPT;
+                        ? SystemPrompt.ECHARTS_SYSTEM_PROMPT
+                        : SystemPrompt.GENERAL_SYSTEM_PROMPT+style+extendedPrompt;
 
         // 7️⃣ Sink：解耦 AI 流和 SSE 连接
         Sinks.Many<ChatResult> sink = Sinks.many().unicast().onBackpressureBuffer();
@@ -584,7 +666,10 @@ public class CodeApp {
                     .advisors(advisor -> advisor
                             .param(ChatMemory.CONVERSATION_ID, chatId)
                             .param("messageId", regenDTO.getAssistantMessageId()));
-            if (localToolCallbacks != null) {
+            if(setting!=null&&setting.getUseMcp()){//useMcp
+                promptBuilder.toolCallbacks(toolCallbackProvider);
+            }
+            if (localToolCallbacks != null&&isToolAuto.get()) {
                 promptBuilder.toolCallbacks(localToolCallbacks);
             }
             return promptBuilder
@@ -668,7 +753,7 @@ public class CodeApp {
                 if (!finalAnswer.isEmpty()) {
                      dailyService.addTotalUsage(userId, type, token.get());//增加用户使用量
                      dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),//每天增加使用量
-                              completion_tokens.get(), cached_tokens.get());
+                              completion_tokens.get(), cached_tokens.get(),"chat","qwq-plus");
         chatMessageService.updateMessage(chatId, finalAnswer,regenDTO.getAssistantMessageId(),"assistant",token.get(),
                 (int) (endTime.get() - startTime.get()),prompt_tokens.get(),completion_tokens.get()
                 ,cached_tokens.get(),(thinkingEndTime.get()-thinkingStartTime.get()));
@@ -678,6 +763,7 @@ public class CodeApp {
             } else if (signal == SignalType.CANCEL) {
                 if (cancelTokenRegistry.isCancelled(chatId)) {
                     endTime.set(System.currentTimeMillis());
+                    thinkingEndTime.set(System.currentTimeMillis());
                     Usage usage = finalUsage.get();
                     if (usage == null) return;
                     if (usage.getPromptTokens() != null) prompt_tokens.set(usage.getPromptTokens());
@@ -696,7 +782,7 @@ public class CodeApp {
                     if (!finalAnswer.isEmpty()) {
                          dailyService.addTotalUsage(userId, type, token.get());//增加用户使用量
                          dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),//每天增加使用量
-                                  completion_tokens.get(), cached_tokens.get());
+                                  completion_tokens.get(), cached_tokens.get(),"chat","qwq-plus");
                         chatMessageService.updateMessage(chatId, finalAnswer,regenDTO.getAssistantMessageId(),"assistant",token.get(),
                                 (int) (endTime.get() - startTime.get()),prompt_tokens.get(),
                                 completion_tokens.get(),cached_tokens.get(),(thinkingEndTime.get()-thinkingStartTime.get()));
@@ -796,8 +882,7 @@ public class CodeApp {
 //        return chatResponse.getResult().getOutput().getText();
 //
 //    }
-    @Resource
-    private ToolCallbackProvider toolCallbackProvider;
+
     public String doChatWithMcp(String message,String chatId)
     {
         ChatClient chatClient = chatClientBuilder.build();

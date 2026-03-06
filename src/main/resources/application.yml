@@ -20,15 +20,15 @@ spring:
     name: ai-gent
   profiles:
     active: local
-#  ai:
-#    mcp:
-#      client:
-##        sse:
-##          connections:
-##            server1:
-##              url: http://localhost:8127
-#        stdio:
-#          servers-configuration: classpath:mcp-githubTool.json
+  ai:
+    mcp:
+      client:
+#        sse:
+#          connections:
+#            server1:
+#              url: http://localhost:8127
+        stdio:
+          servers-configuration: classpath:mcp-githubTool.json
 
 
 

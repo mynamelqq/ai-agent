@@ -64,7 +64,7 @@ public class Controller {
         return Result.success(list);
     }
     @GetMapping("/pinned")
-    public Result pinnedConservations(String conservationId)
+    public Result pinnedConservations(String conservationId)//置顶会话
     {
         Conversation conversation = conversationService.getById(conservationId);
         if(conversation==null)return Result.error("会话不存在");

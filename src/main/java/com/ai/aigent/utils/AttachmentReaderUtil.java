@@ -56,7 +56,7 @@ public class AttachmentReaderUtil {
         String key = url.substring(url.indexOf(AiConstants.suffix_url) + AiConstants.suffix_url.length());
         return cosClient.getObject(bucketName, key);
     }
-    public String readContent(AiAttachment attachment, String messageId, String chatId, String text) {
+    public String readContent(AiAttachment attachment) {
         String url = attachment.getFileUrl();
         String key = url.substring(url.indexOf(AiConstants.suffix_url) + AiConstants.suffix_url.length());
         String fileType = attachment.getFileType();

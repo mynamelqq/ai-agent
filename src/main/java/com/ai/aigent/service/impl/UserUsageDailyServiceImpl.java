@@ -114,7 +114,7 @@ public class UserUsageDailyServiceImpl extends ServiceImpl<UserUsageDailyMapper,
                          long tokens,
                          int promptTokens,
                          int completionTokens,
-                         int cachedTokens) {
+                         int cachedTokens,String from,String model) {
 
         UserUsageDaily usage = new UserUsageDaily();
         usage.setUserId(userId);

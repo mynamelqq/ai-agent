@@ -7,10 +7,14 @@ public class FileGenerateDTO {
     private boolean success;
     private String error;
     private String url;
-    public static FileGenerateDTO ok(String content,Integer size) {
+    private String fileName;
+    private Integer size;
+    public static FileGenerateDTO ok(String content,Integer size,String fileName) {
         FileGenerateDTO dto = new FileGenerateDTO();
         dto.success = true;
-        dto.url =content+"?size="+size;
+        dto.url =content;
+        dto.fileName=fileName;
+        dto.size=size;
         dto.error="";
         return dto;
     }

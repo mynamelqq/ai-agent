@@ -18,6 +18,7 @@ import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
@@ -35,6 +36,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequiredArgsConstructor
+@Slf4j
 @RequestMapping("/agent")
 public class AgentController {
     @Resource
@@ -68,7 +70,7 @@ public class AgentController {
         if (userId.isBlank()||userId.isEmpty()) {
             throw new IllegalArgumentException("用户未登录");
         }
-        session.setUserId(Long.parseLong(JWTUtils.getUserId(userId)));
+        session.setUserId(Long.parseLong(userId));
         session.setTitle(codeApp.genTitle(message));
         session.setCreateTime(new Date());
         session.setUpdateTime(new Date());
@@ -128,8 +130,14 @@ public class AgentController {
     private AgentSessionRegistry agentSessionRegistry;
     @PostMapping("/cancel")
     public Result cancel(@RequestParam String sessionId) {
-        agentSessionRegistry.cancel(sessionId);
-        return Result.success();
+
+        try {
+            agentSessionRegistry.cancel(sessionId);
+            return Result.success();
+        } catch (Exception e) {
+            log.warn("取消操作异常: {}", e.getMessage());
+            return Result.success();
+        }
     }
     @GetMapping("/sessions")
     public Result<List<AgentSessionVO>> listSessions(HttpServletRequest request) {
@@ -169,7 +177,8 @@ public class AgentController {
                 .set(AgentSession::getUpdateTime, new Date())
                 .update();
 
-         if(token!=null && JWTUtils.validateToken(token)){
+         if(token!=null){
+             token=JWTUtils.extractToken(token);
             uid = JWTUtils.getUserId(token);
             type = "user";
          }

@@ -171,7 +171,12 @@ public class AllExceptionHandler  {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<Void> handleException(
             Exception e, HttpServletRequest request) {
-
+        String accept = request.getHeader("Accept");
+        if (accept != null && accept.contains("text/event-stream")) {
+            log.warn("SSE 连接异常（客户端可能已断开）: {}", e.getMessage());
+            return null; // 直接返回 null，不写响应体
+        }
         return Result.error(500, "系统内部错误，请联系管理员");
     }
+
 }

@@ -51,18 +51,30 @@ public class AnonymousUserServiceImpl extends ServiceImpl<AnonymousUserMapper, A
         user.setCreatedAt(new Date());
         user.setDailyTokenLimit(100000);
         user.setLastActiveAt(new Date());
-        repository.insert( user);
+        repository.insert(user);
         return user;
     }
+    public Boolean hasAnnoID(HttpServletRequest req)
+    {
+       String anonId = req.getHeader("Anno-Id");
+        // 2. 如果 Header 里没有，再从 query/body param 里取
+        if (anonId == null || anonId.isEmpty()) {
+            anonId = req.getParameter("annoId");
+        }
+        if (anonId == null || anonId.isEmpty()) {
+            return false;
+        }
+        return true;
+    }
+
     public AnonymousUser getById(HttpServletRequest req) {
-        String anonId = null;
-        if (req.getCookies() != null) {
-            for (Cookie c : req.getCookies()) {
-                if ("anon_id".equals(c.getName())) {
-                    anonId = c.getValue();
-                    break;
-                }
-            }
+        String anonId = req.getHeader("Anno-Id");
+        // 2. 如果 Header 里没有，再从 query/body param 里取
+        if (anonId == null || anonId.isEmpty()) {
+            anonId = req.getParameter("annoId");
+        }
+        if (anonId == null || anonId.isEmpty()) {
+            throw new IllegalArgumentException("参数 annoId 不能为空");
         }
         return repository.selectById(anonId);
     }

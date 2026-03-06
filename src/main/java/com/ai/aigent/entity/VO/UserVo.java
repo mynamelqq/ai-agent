@@ -12,5 +12,6 @@ public class UserVo {
     private String nickname;
     private LocalDateTime lastLoginAt;
     private LocalDateTime createdAt;
-    private String token;
+    private String accessToken;
+    private String refreshToken;
 }

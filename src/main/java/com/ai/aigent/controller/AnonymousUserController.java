@@ -23,26 +23,20 @@ public class AnonymousUserController {
     @GetMapping("/identify")
     public AnonymousUser identify(HttpServletRequest req, HttpServletResponse resp,
                                   @RequestHeader(value = "Fingerprint-Hash", required = false) String fingerprintHash) {
-        // 1. 从 cookie 读取
-        String anonId = null;
-        if (req.getCookies() != null) {
-            for (Cookie c : req.getCookies()) {
-                if ("anon_id".equals(c.getName())) {
-                    anonId = c.getValue();
-                    break;
-                }
-            }
+        // 1. 先从 Header 取
+        String anonId = req.getHeader("Anno-Id");
+
+        // 2. 如果 Header 里没有，再从 query/body param 里取
+        if (anonId == null || anonId.isEmpty()) {
+            anonId = req.getParameter("annoId");
+        }
+
+        if (anonId == null || anonId.isEmpty()) {
+            throw new IllegalArgumentException("参数 annoId 不能为空");
         }
         String ip = req.getRemoteAddr();
         // 3. 获取或创建匿名用户
         AnonymousUser user = service.getOrCreate(anonId, fingerprintHash, ip);
-        // 4. 写回 cookie（最长 10 年）
-        Cookie cookie = new Cookie("anon_id", user.getAnonId());
-        cookie.setMaxAge(365 * 24 * 3600);
-        cookie.setHttpOnly(true);
-        cookie.setPath("/");
-        resp.addCookie(cookie);
-
         return user;
     }
 }

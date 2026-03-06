@@ -31,4 +31,11 @@ public class AgentEvent {
     public static AgentEvent done() {
         return new AgentEvent("done", "", null);
     }
+    public static AgentEvent attachmentLoading() {
+        return new AgentEvent("attachment_loading", "正在读取附件...", null);
+    }
+
+    public static AgentEvent attachmentLoaded() {
+        return new AgentEvent("attachment_loaded", "附件读取完成", null);
+    }
 }

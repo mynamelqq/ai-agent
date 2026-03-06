@@ -67,7 +67,8 @@ public class AiController {
         .update();
         String uid;
         String type;
-        if(token!=null && JWTUtils.validateToken(token)){
+        if(token!=null ){
+            token=token.substring("Bearer ".length());
             uid = JWTUtils.getUserId(token);
             type = "user";
         }
@@ -95,7 +96,8 @@ public class AiController {
         .update();
         String uid;
         String type;
-        if(token!=null && JWTUtils.validateToken(token)){
+        if(token!=null){
+            token=JWTUtils.extractToken(token);
             uid = JWTUtils.getUserId(token);
             type = "user";
         }
@@ -116,15 +118,17 @@ public class AiController {
         if(userId.isBlank()){
             return Result.error("请先登录");
         }
-        String title= codeApp.genTitle(message);
         Conversation conversation = new Conversation();
-        conversation.setTitle(title);
-        conversation.setCreatedAt(LocalDateTime.now());
+        conversation.setTitle("新对话");
+        conversation.setCreatedAt(LocalDateTime.now( ));
         conversation.setUpdatedAt(LocalDateTime.now());
         conversation.setId(ChatId);
         conversation.setPinned(false);
         conversation.setUser_id(userId);
         conversationService.save(conversation);
+        String title= codeApp.genTitle(message);
+        conversation.setTitle(title);
+        conversationService.updateById(conversation);
         return Result.success(Map.of("title",title));
     }
     @PostMapping("/ocr")

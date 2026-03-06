@@ -13,89 +13,115 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
-import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.FillPatternType;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.IndexedColors;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+
 @Slf4j
 @Component
 public class FileOperationTool {
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    public final String FILE_DIR = FileConstant.FILE_SAVE_DIR+"\\file"; // 建议配置化
 
-//    @Tool(description = "从指定文件中读取文本内容,文件都在绝对路径E:\\AAA project\\aigent\\aigent\\tmp\\file")
-//    public String readFile(
-//            @ToolParam(description = "要读取的文件名，例如 'test.txt'") String fileName) {
-//        String filePath = FILE_DIR + "\\" + fileName;
-//        try {
-//            return filePath+":"+FileUtil.readUtf8String(filePath);
-//        } catch (Exception e) {
-//            return "读取失败: " + e.getMessage();
-//        }
-//    }
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    public final String FILE_DIR = FileConstant.FILE_SAVE_DIR + "\\file";
     @Value("${cos.bucket}")
     private String bucket;
     @Value("${cos.region}")
     private String region;
     @Autowired
     private COSClient cosClient;
-//    @Tool(description = "将内容写入指定文本文件，并返回下载URL,如果文件长度超过100KB则不调用工具.",returnDirect = false)
-//    public String writeFile(
-//            @ToolParam(description = "文件名") String fileName,
-//            @ToolParam(description = "文件后缀,例:txt,md,json") String fileType,
-//            @ToolParam(description = "要写入的内容") String textContent) {
-//        try {
-//            if(textContent.length()>=1024*200){//100KB
-//                return "文件长度超过200KB，不许调用";
-//            }
-//            if (!fileType.startsWith(".")) fileType = "." + fileType;
-//            PipedOutputStream out = new PipedOutputStream();
-//            PipedInputStream in = new PipedInputStream(out);
-//            // 异步写入文本内容
-//            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-//                try (OutputStream os = out) {
-//                    os.write(textContent.getBytes(StandardCharsets.UTF_8));
-//                } catch (IOException e) {
-//                    throw new RuntimeException(e);
-//                }
-//            });
-//            String key = "generate/" + UUID.randomUUID() + fileType;
-//            ObjectMetadata metadata = new ObjectMetadata();
-//            metadata.setContentLength(textContent.getBytes(StandardCharsets.UTF_8).length);
-//            PutObjectRequest request = new PutObjectRequest(bucket, key, in, metadata);
-//            cosClient.putObject(request);
-//            future.join(); // 等待写入完成
-//            return String.format("https://%s.cos.%s.myqcloud.com/%s",
-//                    bucket,
-//                    cosClient.getClientConfig().getRegion().getRegionName(),
-//                    key);
-//        } catch (Exception e) {
-//            return "文件生成失败";
-//        }
-//    }
-      @Tool(description = "生成 PDF 文件并上传到 COS，返回下载URL", returnDirect = false)
-    public String generatePDF(
-            @ToolParam(description = "Excel内容，纯文本") String content,
-            @ToolParam(description = "输出文件名(不含后缀)") String fileName
+    @Tool(description = "将内容写入指定文本文件并上传到 COS，返回下载 URL（内容不超过 200KB）", returnDirect = false)
+    public String writeFile(
+            @ToolParam(description = "文件名（不含后缀）") String fileName,
+            @ToolParam(description = "文件后缀，例如 txt、md、json") String fileType,
+            @ToolParam(description = "要写入的文本内容") String textContent,
+            ToolContext context
     ) {
-        String safeText = stripNonBmp(content);
+        try {
+            if (textContent == null || textContent.length() >= 1024 * 200) {
+                return "文件内容超过 200KB，不允许调用";
+            }
+            if (fileType == null || fileType.isBlank()) {
+                fileType = ".txt";
+            } else if (!fileType.startsWith(".")) {
+                fileType = "." + fileType;
+            }
 
-        // COS key
-        String key = "generate/" + UUID.randomUUID() + ".pdf";
+            String finalFileName = normalizeFileName(fileName, fileType);
+            String chatId = context.getContext().get("chatId").toString();
+            String key = "generate/" + chatId + "/" + finalFileName;
 
-        try (
-                PipedOutputStream out = new PipedOutputStream();
-                PipedInputStream in = new PipedInputStream(out)
-        ) {
-            // 异步生成 PDF 写入流
+            byte[] bytes = textContent.getBytes(StandardCharsets.UTF_8);
+            try (PipedOutputStream out = new PipedOutputStream();
+                 PipedInputStream in = new PipedInputStream(out)) {
+
+                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                    try (OutputStream os = out) {
+                        os.write(bytes);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+
+                ObjectMetadata metadata = new ObjectMetadata();
+                metadata.setContentLength(bytes.length);
+                PutObjectRequest request = new PutObjectRequest(bucket, key, in, metadata);
+                cosClient.putObject(request);
+                future.join();
+            }
+
+            String url = String.format("https://%s.cos.%s.myqcloud.com/%s",
+                    bucket,
+                    cosClient.getClientConfig().getRegion().getRegionName(),
+                    key);
+            return toJson(FileGenerateDTO.ok(url, bytes.length, finalFileName));
+        } catch (Exception e) {
+            return toJson(FileGenerateDTO.error(e.getMessage()));
+        }
+    }
+
+    @Tool(description = "生成 PDF 文件并上传到 COS，返回下载 URL", returnDirect = false)
+    public String generatePDF(
+            @ToolParam(description = "PDF 内容") String content,
+            @ToolParam(description = "文件名（不含后缀）") String fileName,
+            ToolContext context
+    ) {
+        String safeText = stripNonBmp(content == null ? "" : content);
+        String finalFileName = normalizeFileName(fileName, ".pdf");
+        String chatId = context.getContext().get("chatId").toString();
+        String key = "generate/" + chatId + "/" + finalFileName;
+
+        try (PipedOutputStream out = new PipedOutputStream();
+             PipedInputStream in = new PipedInputStream(out)) {
+
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                 try (PDDocument document = new PDDocument()) {
                     InputStream fontStream = SpecialFileGenerationTool.class
@@ -104,131 +130,100 @@ public class FileOperationTool {
                     PDType0Font font = PDType0Font.load(document, fontStream);
                     PDPage page = new PDPage(PDRectangle.A4);
                     document.addPage(page);
+
                     try (PDPageContentStream cs = new PDPageContentStream(document, page)) {
                         cs.beginText();
                         cs.setFont(font, 12);
                         cs.setLeading(16);
                         cs.newLineAtOffset(50, 770);
-                        for (String line : safeText.split("\n")) {
+                        for (String line : safeText.split("\\n")) {
                             cs.showText(line);
                             cs.newLine();
                         }
                         cs.endText();
                     }
                     document.save(out);
-
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
             });
+
             ObjectMetadata metadata = new ObjectMetadata();
             metadata.setContentType("application/pdf");
             PutObjectRequest request = new PutObjectRequest(bucket, key, in, metadata);
             cosClient.putObject(request);
-            // 等待 PDF 写入完成
             future.join();
-            // 返回 COS URL
-            return toJson(FileGenerateDTO.ok(String.format("https://%s.cos.%s.myqcloud.com/%s",
+
+            String url = String.format("https://%s.cos.%s.myqcloud.com/%s",
                     bucket,
                     cosClient.getClientConfig().getRegion().getRegionName(),
-                    key),0));
+                    key);
+            return toJson(FileGenerateDTO.ok(url, 0, finalFileName));
         } catch (Exception e) {
-            return toJson(FileGenerateDTO.error("PDF生成失败"+e.getMessage()));
+            return toJson(FileGenerateDTO.error("PDF generation failed: " + e.getMessage()));
         }
     }
-    public static String stripNonBmp(String text)
-    { if (text == null) { return null; }
 
-        StringBuilder sb = new StringBuilder(text.length());
-        for (int i = 0; i < text.length(); i++) {
-            char ch = text.charAt(i);
-            if (Character.isHighSurrogate(ch))
-            { i++;
-                // 跳过低位代理
-                continue;
-            }
-            sb.append(ch);
-        }
-        return sb.toString();
-    }
-    private String toJson(Object obj) {
-        try {
-            return objectMapper.writeValueAsString(obj);
-        } catch (Exception e) {
-            log.error("JSON序列化失败", e);
-            return "{\"success\":false,\"error\":\"JSON序列化失败\"}";
-        }
-    }
-    @Tool(description = "生成 Excel 文件并上传到 COS，返回下载URL")
+    @Tool(description = "生成 Excel 文件并上传到 COS，返回下载 URL")
     public String generateExcel(
-            @ToolParam(description = "Excel二维数组JSON字符串，例如 [[\"姓名\",\"年龄\"],[\"张三\",\"18\"]]")
-            String rowsJson,
-            @ToolParam(description = "文件名(不含后缀)")
-            String fileName
-    ){
+            @ToolParam(description = "Excel 二维数组 JSON 字符串，例如 [[\"姓名\",\"年龄\"],[\"张三\",\"18\"]]") String rowsJson,
+            @ToolParam(description = "文件名（不含后缀）") String fileName,
+            ToolContext context
+    ) {
         List<List<String>> rows;
         try {
-            rows = new ObjectMapper().readValue(
-                    rowsJson,
-                    new TypeReference<List<List<String>>>() {}
-            );
+            rows = objectMapper.readValue(rowsJson, new TypeReference<List<List<String>>>() {
+            });
         } catch (Exception e) {
-            return toJson(FileGenerateDTO.error("rows JSON解析失败"));
+            return toJson(FileGenerateDTO.error("rows JSON parse failed"));
         }
-        // 参数验证
+
         if (rows == null || rows.isEmpty()) {
-            return toJson(FileGenerateDTO.error("Excel生成失败：数据不能为空"));
+            return toJson(FileGenerateDTO.error("Excel generation failed: rows cannot be empty"));
         }
-        // 验证数据格式
+
         int headerSize = rows.get(0).size();
         for (int i = 1; i < rows.size(); i++) {
             if (rows.get(i).size() != headerSize) {
-                return toJson(FileGenerateDTO.error(
-                    String.format("Excel生成失败：第%d行列数不一致，期望%d列，实际%d列",
-                        i + 1, headerSize, rows.get(i).size())
-                ));
+                return toJson(FileGenerateDTO.error(String.format(
+                        "Excel generation failed: row %d column count mismatch, expected %d but got %d",
+                        i + 1, headerSize, rows.get(i).size())));
             }
         }
-        // 处理文件名
-        if (!fileName.endsWith(".xlsx")) {
-            fileName += ".xlsx";
-        }
-        String key = "generate/" + UUID.randomUUID() + ".xlsx";
+
+        String finalFileName = normalizeFileName(fileName, ".xlsx");
+        String chatId = context.getContext().get("chatId").toString();
+        String key = "generate/" + chatId + "/" + finalFileName;
+
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try {
-            // 1. 生成 Excel 到内存
             try (Workbook wb = new XSSFWorkbook()) {
                 Sheet sheet = wb.createSheet("Sheet1");
-                // 创建标题行样式
                 CellStyle headerStyle = wb.createCellStyle();
                 Font headerFont = wb.createFont();
                 headerFont.setBold(true);
                 headerStyle.setFont(headerFont);
                 headerStyle.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
                 headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-                // 创建数据行
+
                 for (int i = 0; i < rows.size(); i++) {
                     Row row = sheet.createRow(i);
                     List<String> cols = rows.get(i);
-
                     for (int j = 0; j < cols.size(); j++) {
                         Cell cell = row.createCell(j);
                         String value = cols.get(j);
-
-                        // 根据内容类型设置值
                         if (isNumeric(value)) {
                             cell.setCellValue(Double.parseDouble(value));
                             cell.setCellType(CellType.NUMERIC);
                         } else {
                             cell.setCellValue(value);
                         }
-                        // 为标题行应用样式
                         if (i == 0) {
                             cell.setCellStyle(headerStyle);
                         }
                     }
                 }
-                // 在所有数据写入后调整列宽
+
                 for (int i = 0; i < headerSize; i++) {
                     sheet.autoSizeColumn(i);
                     int currentWidth = sheet.getColumnWidth(i);
@@ -236,26 +231,21 @@ public class FileOperationTool {
                 }
                 wb.write(baos);
             }
-            // 2. 上传到 COS
+
             byte[] excelBytes = baos.toByteArray();
             try (ByteArrayInputStream bais = new ByteArrayInputStream(excelBytes)) {
                 ObjectMetadata metadata = new ObjectMetadata();
                 metadata.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
                 metadata.setContentLength(excelBytes.length);
-//                metadata.setContentDisposition("attachment; filename=\"" + fileName + "\"");
-                PutObjectRequest request = new PutObjectRequest(bucket, key, bais,metadata);
+                PutObjectRequest request = new PutObjectRequest(bucket, key, bais, metadata);
                 cosClient.putObject(request);
             }
-            // 3. 返回 COS URL
-            String url = String.format("https://%s.cos.%s.myqcloud.com/%s",
-                    bucket,
-                    region,
-                    key);
 
-            return toJson(FileGenerateDTO.ok(url,excelBytes.length));
+            String url = String.format("https://%s.cos.%s.myqcloud.com/%s", bucket, region, key);
+            return toJson(FileGenerateDTO.ok(url, excelBytes.length, finalFileName));
         } catch (Exception e) {
             log.error(e.getMessage());
-            return toJson(FileGenerateDTO.error("Excel生成失败: " + e.getMessage()));
+            return toJson(FileGenerateDTO.error("Excel generation failed: " + e.getMessage()));
         } finally {
             try {
                 baos.close();
@@ -265,9 +255,80 @@ public class FileOperationTool {
         }
     }
 
-    /**
-     * 判断字符串是否为数值
-     */
+    @Tool(description = "生成 Word(docx) 文件并上传到 COS，返回下载 URL")
+    public String generateDocx(
+            @ToolParam(description = "Word 文本内容，换行将写成新段落") String content,
+            @ToolParam(description = "文件名（不含后缀）") String fileName,
+            ToolContext context
+    ) {
+        if (content == null || content.isEmpty()) {
+            return toJson(FileGenerateDTO.error("Word generation failed: content cannot be empty"));
+        }
+
+        String finalFileName = normalizeFileName(fileName, ".docx");
+        String chatId = context.getContext().get("chatId").toString();
+        String key = "generate/" + chatId + "/" + finalFileName;
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try {
+            try (XWPFDocument document = new XWPFDocument()) {
+                String[] lines = content.split("\\R", -1);
+                for (String line : lines) {
+                    XWPFParagraph paragraph = document.createParagraph();
+                    XWPFRun run = paragraph.createRun();
+                    run.setText(line);
+                }
+                document.write(baos);
+            }
+
+            byte[] docBytes = baos.toByteArray();
+            try (ByteArrayInputStream bais = new ByteArrayInputStream(docBytes)) {
+                ObjectMetadata metadata = new ObjectMetadata();
+                metadata.setContentType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+                metadata.setContentLength(docBytes.length);
+                PutObjectRequest request = new PutObjectRequest(bucket, key, bais, metadata);
+                cosClient.putObject(request);
+            }
+
+            String url = String.format("https://%s.cos.%s.myqcloud.com/%s", bucket, region, key);
+            return toJson(FileGenerateDTO.ok(url, docBytes.length, finalFileName));
+        } catch (Exception e) {
+            log.error(e.getMessage());
+            return toJson(FileGenerateDTO.error("Word generation failed: " + e.getMessage()));
+        } finally {
+            try {
+                baos.close();
+            } catch (IOException e) {
+                log.error(e.getMessage());
+            }
+        }
+    }
+
+    public static String stripNonBmp(String text) {
+        if (text == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (Character.isHighSurrogate(ch)) {
+                i++;
+                continue;
+            }
+            sb.append(ch);
+        }
+        return sb.toString();
+    }
+
+    private String toJson(Object obj) {
+        try {
+            return objectMapper.writeValueAsString(obj);
+        } catch (Exception e) {
+            log.error("JSON serialize failed", e);
+            return "{\"success\":false,\"error\":\"JSON serialize failed\"}";
+        }
+    }
+
     private boolean isNumeric(String str) {
         if (str == null || str.isEmpty()) {
             return false;
@@ -280,4 +341,14 @@ public class FileOperationTool {
         }
     }
 
+    private String normalizeFileName(String fileName, String extension) {
+        String extLower = extension.toLowerCase(Locale.ROOT);
+        if (fileName == null || fileName.isBlank()) {
+            return UUID.randomUUID() + extension;
+        }
+        if (fileName.toLowerCase(Locale.ROOT).endsWith(extLower)) {
+            return fileName;
+        }
+        return fileName + extension;
+    }
 }

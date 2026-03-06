@@ -27,11 +27,9 @@ public class UsersServiceImpl extends ServiceImpl<UsersMapper, Users>
     @Override
     public String getLoginUser(HttpServletRequest request) {
         String token=request.getHeader("Authorization");
-        if(token.isBlank()){
-            return  "";
-        }
-        if(JWTUtils.validateToken(token))
+        if(token!=null)
         {
+            token=JWTUtils.extractToken(token);
             return  JWTUtils.getUserId(token);
         }
         else {
@@ -40,7 +38,7 @@ public class UsersServiceImpl extends ServiceImpl<UsersMapper, Users>
                 return  user.getAnonId();
             }
         }
-        return "";
+        throw new RuntimeException("未登录");
     }
 }
 

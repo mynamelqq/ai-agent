@@ -68,7 +68,7 @@ public class UploadController {
         att.setFileType(req.getFile_type());
         att.setChatId(req.getChat_id());
         att.setConservationId(req.getConservation_id());
-        Object token = request.getHeader("Authorization");
+        Object token = request.getHeader("Authorization").substring("Bearer ".length());
         if (token != null && JWTUtils.validateToken(token.toString())) {
             att.setUserId(Long.parseLong(JWTUtils.getUserId(token.toString())));
         }
