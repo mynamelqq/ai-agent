@@ -2,6 +2,7 @@ package com.ai.aigent.service;
 
 import com.ai.aigent.entity.domin.UserUsageDaily;
 import com.baomidou.mybatisplus.extension.service.IService;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -26,6 +27,10 @@ public interface UserUsageDailyService extends IService<UserUsageDaily> {
     List<Map<String, Object>> statByMonth(String userId,
                                                  LocalDate start,
                                                  LocalDate end);
-
+    Long getUsage(HttpServletRequest request);
      Long todayTokens(String userId);
+
+    List<Map<String, Object>> statByModel(String userId);
+
+    Map<String, Object> statPromptCompletion(String userId);
 }

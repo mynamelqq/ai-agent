@@ -3,7 +3,9 @@ package com.ai.aigent.utils;
 import com.ai.aigent.constant.AiConstants;
 import com.ai.aigent.demo.image.VisionPerception;
 import com.ai.aigent.entity.domin.AiAttachment;
+import com.ai.aigent.entity.dto.VideoUnderstandReq;
 import com.ai.aigent.service.AiAttachmentService;
+import com.ai.aigent.service.VideoUnderstandingService;
 import com.qcloud.cos.COSClient;
 import com.qcloud.cos.model.COSObject;
 import jakarta.annotation.Resource;
@@ -17,6 +19,11 @@ import org.apache.poi.xslf.usermodel.XSLFTextShape;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.tika.Tika;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.rag.Query;
+import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
+import org.springframework.ai.vectorstore.filter.Filter;
+import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -33,12 +40,16 @@ import java.util.stream.Collectors;
 public class AttachmentReaderUtil {
     @Autowired
     private COSClient cosClient;
-    public static final long SMALL_FILE_LIMIT = 80 * 1024; // 50KB
+    public static final long SMALL_FILE_LIMIT = 100 * 1024;
+    private static final double ATTACHMENT_SIMILARITY_THRESHOLD = 0.20d;
+    private static final int ATTACHMENT_TOP_K = 4;
     @Resource
     @Qualifier("attachmentVectorStore")
     private VectorStore attachmentVectorStore;
     @Autowired
     private VisionPerception visionPerception;
+    @Autowired
+    VideoUnderstandingService videoUnderstandingService;
     @Autowired
     private AiAttachmentService attachmentService;
   public static List<String> split(String text, int chunkSize, int overlap) {
@@ -57,6 +68,10 @@ public class AttachmentReaderUtil {
         return cosClient.getObject(bucketName, key);
     }
     public String readContent(AiAttachment attachment) {
+        return readContent(attachment, "");
+    }
+
+    public String readContent(AiAttachment attachment, String userQuery) {
         String url = attachment.getFileUrl();
         String key = url.substring(url.indexOf(AiConstants.suffix_url) + AiConstants.suffix_url.length());
         String fileType = attachment.getFileType();
@@ -72,10 +87,22 @@ public class AttachmentReaderUtil {
 //        else if(fileType.startsWith("audio/")){
 //
 //        }
-
+        if (fileType.startsWith("/video/"))
+        {
+            try {
+                VideoUnderstandReq req = new VideoUnderstandReq();
+                req.setModel("glm-4.6v");
+                req.setTemperature(0.3);
+                req.setVideoUrl(url);
+                return "User uploaded file: "+attachment.getFileName()+". Here are its contents:\n"+
+                        videoUnderstandingService.understand(req);
+            }catch (Exception e){
+                return "User uploaded file: "+attachment.getFileName()+". Here are its contents:\n"+"视频理解模型调用失败";
+            }
+        }
         // ✅ 小文件：直接读取全文
         if (fileSize < SMALL_FILE_LIMIT) {
-            COSObject object = cosClient.getObject("efrewew-1402637531", key);
+            COSObject object = cosClient.getObject(AiConstants.bulk, key);
 
             try (InputStream is = object.getObjectContent()) {
 //                long contentLength = object.getObjectMetadata().getContentLength();
@@ -85,30 +112,34 @@ public class AttachmentReaderUtil {
             }
         }
         attachmentService.asyncEmbedding(attachment);
-
-//        // ✅ 大文件：走向量检索
-//        FilterExpressionBuilder builder = new FilterExpressionBuilder();
-//        Supplier<Filter.Expression> expressionSupplier =
-//                () -> builder.eq("fileId", String.valueOf(attachment.getId())).build();
-//
-//        VectorStoreDocumentRetriever retriever =
-//                new VectorStoreDocumentRetriever(attachmentVectorStore, 0.4, 10, expressionSupplier);
-//
-//        List<Document> retrieve = retriever.retrieve(new Query(text));
-
-//        if (retrieve.isEmpty()) {
-//            return "The file is still being processed. Please try again in a few seconds.";
-//        }
-//
-        StringBuilder content = new StringBuilder(
-                "User uploaded file: " + attachment.getFileName() + ". Here are its contents:\n"
-        );
-//
-//        for (Document document : retrieve) {
-//            content.append("\n---\n").append(document.getFormattedContent());
-//        }
-
+        List<Document> retrieve = retrieveRelevantChunks(attachment, userQuery);
+        if (retrieve.isEmpty()) {
+            return "User uploaded file: " + attachment.getFileName()
+                    + ". This is a large file and is being indexed. Please retry in a few seconds.";
+        }
+        StringBuilder content = new StringBuilder();
+        content.append("User uploaded file: ").append(attachment.getFileName())
+                .append(". Relevant content chunks:\n");
+        for (Document document : retrieve) {
+            content.append("\n---\n").append(document.getText());
+        }
         return content.toString();
+    }
+
+    private List<Document> retrieveRelevantChunks(AiAttachment attachment, String userQuery) {
+        Filter.Expression expression = new FilterExpressionBuilder()
+                .eq("fileId", String.valueOf(attachment.getId()))
+                .build();
+        VectorStoreDocumentRetriever retriever = VectorStoreDocumentRetriever.builder()
+                .vectorStore(attachmentVectorStore)
+                .filterExpression(expression)
+                .similarityThreshold(ATTACHMENT_SIMILARITY_THRESHOLD)
+                .topK(ATTACHMENT_TOP_K)
+                .build();
+        String query = (userQuery == null || userQuery.isBlank())
+                ? ("Summarize key points of file " + attachment.getFileName())
+                : userQuery;
+        return retriever.retrieve(new Query(query));
     }
     private String readContentByContentType(InputStream is, String contentType) throws Exception {
         if (contentType == null) {

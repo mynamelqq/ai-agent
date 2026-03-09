@@ -12,6 +12,7 @@ import com.qcloud.cos.model.ObjectMetadata;
 import com.qcloud.cos.model.PutObjectRequest;
 import jakarta.annotation.Resource;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.pdfbox.io.MemoryUsageSetting;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.ss.usermodel.*;
@@ -21,6 +22,7 @@ import org.apache.poi.xslf.usermodel.XSLFSlide;
 import org.apache.poi.xslf.usermodel.XSLFTextShape;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -35,6 +37,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -45,6 +51,9 @@ import java.util.UUID;
 @Service
 public class AiAttachmentServiceImpl extends ServiceImpl<AiAttachmentMapper, AiAttachment>
     implements AiAttachmentService{
+    private static final int CHUNK_SIZE = 1200;
+    private static final int CHUNK_OVERLAP = 200;
+    private static final int VECTOR_BATCH_SIZE = 10;
      @Value("${cos.bucket}")
     private String bucket;
      @Autowired
@@ -99,36 +108,62 @@ public class AiAttachmentServiceImpl extends ServiceImpl<AiAttachmentMapper, AiA
         String url = att.getFileUrl();
             String s = ".myqcloud.com/";
             String key = url.substring(url.indexOf(s) + s.length());
-            String fileType = att.getFileType();
-            Long fileSize=att.getFileSize();
-            COSObject object = cosClient.getObject("efrewew-1402637531", key);
+            COSObject object = cosClient.getObject(bucket, key);
             try (InputStream is = object.getObjectContent()) {
-//                 while ( true){
-//
-//                 }
-//                TextDocumentParser parser = new TextDocumentParser();
-//                List<Document> documents = parser.parse(is);
-//                List<Document> chunkedDocs = new ArrayList<>();
-//                for (Document doc : documents) {
-//                    List<String> chunks = AttachmentReaderUtil.split(doc.getFormattedContent(), 2000, 100);
-//                    int idx = 0;
-//                    for (String chunk : chunks) {
-//                        Document d = new Document(att.getFileName()+"/n"+chunk);
-//                        Map<String, Object> meta = d.getMetadata();
-//                        meta.put("fileId", att.getId());
-//                        meta.put("chunkIndex", idx++);
-//                        chunkedDocs.add(d);
-//                    }
-//                }
-//                List<List<Document>> batches = ListUtil.partition(chunkedDocs, 50);
-//                    for (List<Document> batch : batches) {
-//                        attachmentVectorStore.add(batch);
-//                }
-
-
+                String content = readContentByContentType(is, att.getFileType());
+                if (content == null || content.isBlank()) {
+                    return;
+                }
+                List<String> chunks = splitSmart(content, CHUNK_SIZE, CHUNK_OVERLAP);
+                if (chunks.isEmpty()) {
+                    return;
+                }
+                List<Document> allDocs = new ArrayList<>(chunks.size());
+                for (int i = 0; i < chunks.size(); i++) {
+                    Map<String, Object> metadata = new HashMap<>();
+                    metadata.put("fileId", String.valueOf(att.getId()));
+                    metadata.put("fileName", att.getFileName());
+                    metadata.put("chatId", att.getChatId());
+                    metadata.put("conservationId", att.getConservationId());
+                    metadata.put("chunkIndex", i);
+                    allDocs.add(new Document(String.valueOf(att.getId()) + "_" + i, chunks.get(i), metadata));
+                }
+                for (int start = 0; start < allDocs.size(); start += VECTOR_BATCH_SIZE) {
+                    int end = Math.min(start + VECTOR_BATCH_SIZE, allDocs.size());
+                    attachmentVectorStore.add(allDocs.subList(start, end));
+                }
+                log.debug("Attachment embedding done, fileId=" + att.getId() + ", chunks=" + allDocs.size());
         } catch (Exception e) {
-            throw new RuntimeException("读取 COS 文件失败: " + key, e);
+            log.error("Attachment embedding failed, fileId=" + att.getId() + ", key=" + key, e);
         }
+    }
+    private List<String> splitSmart(String text, int chunkSize, int overlap) {
+        List<String> chunks = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            return chunks;
+        }
+        int start = 0;
+        int len = text.length();
+        while (start < len) {
+            int end = Math.min(start + chunkSize, len);
+            if (end < len) {
+                int newline = text.lastIndexOf('\n', end);
+                int punctuation = Math.max(text.lastIndexOf('。', end), text.lastIndexOf('.', end));
+                int boundary = Math.max(newline, punctuation);
+                if (boundary > start + chunkSize / 2) {
+                    end = boundary + 1;
+                }
+            }
+            String chunk = text.substring(start, end).trim();
+            if (!chunk.isEmpty()) {
+                chunks.add(chunk);
+            }
+            if (end == len) {
+                break;
+            }
+            start = Math.max(0, end - overlap);
+        }
+        return chunks;
     }
      private String readContentByContentType(InputStream is, String contentType) throws Exception {
         contentType = contentType.toLowerCase();
@@ -184,17 +219,47 @@ public class AiAttachmentServiceImpl extends ServiceImpl<AiAttachmentMapper, AiA
         return sb.toString();
     }
     private String readPdf(InputStream is) throws IOException {
-        try (PDDocument doc = PDDocument.load(is)) {
+        // 使用内存映射文件处理大文件
+        try (PDDocument doc = PDDocument.load(is, MemoryUsageSetting.setupTempFileOnly())) {
             PDFTextStripper stripper = new PDFTextStripper();
-            StringBuilder sb = new StringBuilder();
+            StringBuilder sb = new StringBuilder(AiCientConstans.MAX_CHARS);
+
             int totalPages = doc.getNumberOfPages();
-            for (int i = 1; i <= totalPages; i++) {
+
+            // 快速估算：扫描前几页估算平均字符数
+            int samplePages = Math.min(3, totalPages);
+            int sampleChars = 0;
+
+            for (int i = 1; i <= samplePages; i++) {
                 stripper.setStartPage(i);
                 stripper.setEndPage(i);
-                sb.append(stripper.getText(doc));
-                if (sb.length() >= AiCientConstans.MAX_CHARS) break;
+                String pageText = stripper.getText(doc);
+                sampleChars += pageText.length();
+
+                // 收集样本页的内容
+                if (sb.length() < AiCientConstans.MAX_CHARS) {
+                    sb.append(pageText);
+                }
             }
-            if (sb.length() > AiCientConstans.MAX_CHARS) sb.setLength(AiCientConstans.MAX_CHARS);
+
+            // 估算剩余所需页数
+            int avgCharsPerPage = sampleChars / samplePages;
+            int neededPages = Math.min(totalPages,
+                (AiCientConstans.MAX_CHARS / avgCharsPerPage) + 1);
+
+            // 处理剩余需要的页数
+            if (neededPages > samplePages) {
+                stripper.setStartPage(samplePages + 1);
+                stripper.setEndPage(neededPages);
+                String remainingText = stripper.getText(doc);
+
+                int remainingNeeded = AiCientConstans.MAX_CHARS - sb.length();
+                if (remainingNeeded > 0) {
+                    sb.append(remainingText.substring(0,
+                        Math.min(remainingNeeded, remainingText.length())));
+                }
+            }
+
             return sb.toString();
         }
     }

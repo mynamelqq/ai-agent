@@ -1,25 +1,35 @@
 package com.ai.aigent.tools;
 
-import com.ai.aigent.constant.FileConstant;
 import com.ai.aigent.entity.dto.DownloadResourceResponseDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qcloud.cos.COSClient;
+import com.qcloud.cos.model.ObjectMetadata;
+import com.qcloud.cos.model.PutObjectRequest;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
+import java.time.LocalDate;
+import java.util.Locale;
+import java.util.UUID;
 
+@Component
 public class DownloadResourceTool {
-    private String FILE_DIR= FileConstant.FILE_SAVE_DIR+"/download";
-     private final ObjectMapper objectMapper = new ObjectMapper();
-   @Tool(description = "下载指定 URL 的资源到固定目录，并使用指定的文件名保存")
+    @Value("${cos.bucket}")
+    private String bucket;
+    @Autowired
+    private COSClient cosClient;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Tool(description = "下载指定 URL 的资源并上传到 COS，返回下载链接")
 public String downloadResource(
         @ToolParam(description = "资源 URL（仅支持 http/https）") String url,
         @ToolParam(description = "保存的文件名，如 example.zip") String fileName) {
@@ -30,49 +40,34 @@ public String downloadResource(
     if (fileName == null || fileName.isBlank()) {
         return toJson(DownloadResourceResponseDTO.error(url, "fileName 不能为空"));
     }
-
     if (!isHttpUrl(url)) {
         return toJson(DownloadResourceResponseDTO.error(url, "仅支持 http/https 协议"));
     }
-
     // 1️⃣ 清理文件名（防路径穿越）
     fileName = sanitizeFileName(fileName);
 
+    if (cosClient == null || bucket == null || bucket.isBlank()) {
+        return toJson(DownloadResourceResponseDTO.error(url, "COS 未初始化"));
+    }
+
+    HttpURLConnection conn = null;
     try {
-        Path downloadDir = Paths.get(FILE_DIR);
-        Files.createDirectories(downloadDir);
-
-        Path targetPath = downloadDir.resolve(fileName).normalize();
-
-        // 2️⃣ 二次校验：确保仍在 download 目录下
-        if (!targetPath.startsWith(downloadDir)) {
-            return toJson(DownloadResourceResponseDTO.error(
-                    url, "非法文件路径"));
-        }
-
-        // 3️⃣ 建立连接
+        // 2️⃣ 建立连接
         URI uri = URI.create(url);
-        HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();
+        conn = (HttpURLConnection) uri.toURL().openConnection();
         conn.setConnectTimeout(10_000);
         conn.setReadTimeout(15_000);
         conn.setInstanceFollowRedirects(true);
         fillBrowserHeaders(conn, url);
-
-
-
         int status = conn.getResponseCode();
         if (status >= 400) {
             return toJson(DownloadResourceResponseDTO.error(
                     url, "HTTP 错误: " + status));
         }
         String contentType = conn.getContentType();
-        if (contentType == null) {
-            return toJson(DownloadResourceResponseDTO.error(
-                    url, "无法获取 Content-Type"));
-        }
 
         // ⚠️ 明确拒绝 HTML
-        if (contentType.contains("text/html")) {
+        if (contentType != null && contentType.toLowerCase(Locale.ROOT).contains("text/html")) {
             return toJson(DownloadResourceResponseDTO.error(
                     url, "返回的是 HTML 页面，疑似 404 或反爬"));
         }
@@ -83,26 +78,53 @@ public String downloadResource(
                     url, "文件超过大小限制(10MB)"));
         }
 
-        // 4️⃣ 下载（带大小限制）
+        // 3️⃣ 下载到内存（带大小限制）
+        byte[] fileBytes;
         long size;
         try (InputStream in = conn.getInputStream();
-             OutputStream out = Files.newOutputStream(
-                     targetPath,
-                     StandardOpenOption.CREATE,
-                     StandardOpenOption.TRUNCATE_EXISTING)) {
-
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             size = copyWithLimit(in, out, MAX_SIZE);
+            fileBytes = out.toByteArray();
         }
 
+        // 4️⃣ 上传 COS
+        String key = buildCosKey(fileName);
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentLength(fileBytes.length);
+        if (contentType != null && !contentType.isBlank()) {
+            metadata.setContentType(contentType);
+        } else {
+            metadata.setContentType("application/octet-stream");
+        }
+
+        try (ByteArrayInputStream uploadIn = new ByteArrayInputStream(fileBytes)) {
+            PutObjectRequest request = new PutObjectRequest(bucket, key, uploadIn, metadata);
+            cosClient.putObject(request);
+        }
+        String cosUrl = String.format("https://%s.cos.%s.myqcloud.com/%s",
+                bucket,
+                cosClient.getClientConfig().getRegion().getRegionName(),
+                key);
+
         return toJson(DownloadResourceResponseDTO.ok(
-                url, fileName, targetPath.toString(), size));
+                url, fileName, key, cosUrl, size));
 
     } catch (Exception e) {
         return toJson(DownloadResourceResponseDTO.error(url, e.getMessage()));
+    } finally {
+        if (conn != null) {
+            conn.disconnect();
+        }
     }
 }
     private boolean isHttpUrl(String url) {
         return url.startsWith("http://") || url.startsWith("https://");
+    }
+    private String buildCosKey(String fileName) {
+        String date = LocalDate.now().toString();
+        String unique = UUID.randomUUID().toString().replace("-", "");
+        String safeName = Paths.get(fileName).getFileName().toString();
+        return "download/" + date + "/" + unique + "_" + safeName;
     }
     private String toJson(Object obj) {
         try {
@@ -135,7 +157,7 @@ public String downloadResource(
         }
     }
     private long copyWithLimit(
-            InputStream in, OutputStream out, long maxBytes) throws IOException {
+            InputStream in, ByteArrayOutputStream out, long maxBytes) throws IOException {
 
         byte[] buffer = new byte[8192];
         long total = 0;

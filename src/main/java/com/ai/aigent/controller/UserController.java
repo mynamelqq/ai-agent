@@ -48,7 +48,7 @@ public class UserController {
         user.setPassword(password);
         user.setCreatedAt(LocalDateTime.now());
         usersMapper.insert(user);
-        userSettingService.createDefaultSetting(user.getId());
+        userSettingService.createDefaultSetting(user.getId().toString());
         return Result.success();
     }
      @PostMapping("/setting/update")
@@ -58,7 +58,7 @@ public class UserController {
     }
     @GetMapping("/setting/{userId}")
     public Result<UserSetting> get(@PathVariable Long userId) {
-        return Result.success(userSettingService.getByUserId(userId));
+        return Result.success(userSettingService.getByUserId(userId.toString()));
     }
     private static final long DEFAULT_EXPIRATION = 24 * 60 * 60 * 1000L; // 24小时
     private static final String ISSUER = "ai-agent-system";
@@ -144,4 +144,6 @@ public class UserController {
          String s = JWTUtils.refreshToken(refreshToken);
          return Result.success("Token刷新成功", s);
     }
+
+
 }

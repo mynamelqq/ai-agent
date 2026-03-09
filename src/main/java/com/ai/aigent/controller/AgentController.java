@@ -70,7 +70,7 @@ public class AgentController {
         if (userId.isBlank()||userId.isEmpty()) {
             throw new IllegalArgumentException("用户未登录");
         }
-        session.setUserId(Long.parseLong(userId));
+        session.setUserId(userId);
         session.setTitle(codeApp.genTitle(message));
         session.setCreateTime(new Date());
         session.setUpdateTime(new Date());
@@ -146,7 +146,7 @@ public class AgentController {
             throw new IllegalArgumentException("用户未登录");
         }
         List<AgentSession> sessions = agentSessionService.lambdaQuery()
-                .eq(AgentSession::getUserId, Long.parseLong(userId))
+                .eq(AgentSession::getUserId, userId)
                 .orderByDesc(AgentSession::getUpdateTime)
                 .list();
         List<AgentSessionVO> vos = sessions.stream().map(s -> {
@@ -177,7 +177,7 @@ public class AgentController {
                 .set(AgentSession::getUpdateTime, new Date())
                 .update();
 
-         if(token!=null){
+         if(token!=null&&!token.isEmpty()){
              token=JWTUtils.extractToken(token);
             uid = JWTUtils.getUserId(token);
             type = "user";
@@ -191,7 +191,7 @@ public class AgentController {
         // 4. 每次取新的 prototype bean，避免状态污染
         Manus manus = applicationContext.getBean(Manus.class);
         // 6. 启动流
-        return manus.runStream(prompt,sessionId,agentSendReq.getAttachments());
+        return manus.runStream(prompt,sessionId,agentSendReq.getAttachments(),userId);
     }
     @Transactional
     @PostMapping("/delete")

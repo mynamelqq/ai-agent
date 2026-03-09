@@ -11,4 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 */
 public interface UsersService extends IService<Users> {
     String getLoginUser(HttpServletRequest request);
+    String getLoginUsers(HttpServletRequest request);
+
+
 }

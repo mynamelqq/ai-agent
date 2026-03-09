@@ -16,7 +16,7 @@ import java.util.Date;
 public class AgentSession {
     @TableId(type = IdType.AUTO)
     private String id;
-    private Long userId;
+    private String userId;
     private String title;
     private String lastMessage;
     private Date createTime;

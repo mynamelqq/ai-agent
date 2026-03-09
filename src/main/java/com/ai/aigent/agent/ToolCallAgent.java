@@ -71,7 +71,7 @@ public  class ToolCallAgent extends ReActAgent{
             AtomicReference<ChatResponse> lastResponse = new AtomicReference<>();
             AtomicReference<Usage> finalUsage = new AtomicReference<>();
             AtomicReference<Integer> token = new AtomicReference<>(0);
-             Map<String, Object> toolContext = Collections.singletonMap("chatId", this.getSessionId());
+             Map<String, Object> toolContext = Map.of("chatId", getSessionId(),"userId",getUserId());
              AtomicReference<Boolean>isThinking = new AtomicReference<>(false);
             AtomicReference<Long>thinkingStartTime=new AtomicReference<>(System.currentTimeMillis());
             AtomicReference<Long>thinkingEndTime=new AtomicReference<>(System.currentTimeMillis());

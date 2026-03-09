@@ -9,8 +9,10 @@ import com.ai.aigent.mapper.UserUsageDailyMapper;
 import com.ai.aigent.service.AnonymousUserService;
 import com.ai.aigent.service.UserUsageDailyService;
 import com.ai.aigent.service.UsersService;
+import com.ai.aigent.utils.JWTUtils;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +50,24 @@ public class UserUsageDailyServiceImpl extends ServiceImpl<UserUsageDailyMapper,
         }
     }
 
+    @Override
+    public Long getUsage(HttpServletRequest request) {
+        String token=request.getHeader("Authorization");
+        if(token!=null&&!token.isEmpty())
+        {
+            token= JWTUtils.extractToken(token);
+            String userId = JWTUtils.getUserId(token);
+            Users user = usersService.getById(userId);
+            return  user.getTotalTokensUsed();
+        }
+        else {
+            AnonymousUser user=anonymousUserService.getById(request);
+            if(user!=null){
+                return  user.getTotalTokensUsed();
+            }
+        }
+        throw new IllegalArgumentException("未登录");
+    }
     public long getDailyLimit(String userId, String type) {//查询额度
         if ("user".equals(type)) {
             return usersService.getById(userId).getDailyTokenLimit();
@@ -68,46 +88,68 @@ public class UserUsageDailyServiceImpl extends ServiceImpl<UserUsageDailyMapper,
     }
     public List<Map<String, Object>> statByHour(String userId, LocalDate date) {
         return usageMapper.selectMaps(
-                new QueryWrapper<UserUsageDaily>()
-                        .select("DATE_FORMAT(time,'%Y-%m-%d %H:00:00') AS hour",
-                                "SUM(token) AS totalTokens")
-                        .eq("user_id", userId)
-                        .between("time",
-                                date.atStartOfDay(),
-                                date.plusDays(1).atStartOfDay())
-                        .groupBy("hour")
-                        .orderByAsc("hour")
+            new QueryWrapper<UserUsageDaily>()
+                .select("DATE_FORMAT(time, '%Y-%m-%d %H:00:00') AS hour",
+                        "COUNT(*) AS totalCount",      // 次数统计
+                        "SUM(token) AS totalTokens")   // token总量（可选）
+                .eq("user_id", userId)
+                .ge("time", date.atStartOfDay())
+                .lt("time", date.plusDays(1).atStartOfDay())
+                .groupBy("DATE_FORMAT(time, '%Y-%m-%d %H:00:00')")
+                .orderByAsc("hour")
         );
     }
-    public List<Map<String, Object>> statByYear(String userId,
-                                            LocalDate start,
-                                            LocalDate end) {
-        return usageMapper.selectMaps(
+        public List<Map<String, Object>> statByYear(String userId,
+                                               LocalDate start,
+                                                   LocalDate end) {
+            // 使用 ge 和 lt 替代 between，避免函数导致索引失效
+            return usageMapper.selectMaps(
                 new QueryWrapper<UserUsageDaily>()
-                        .select("YEAR(time) AS year",
-                                "SUM(token) AS totalTokens")
-                        .eq("user_id", userId)
-                        .between("time",
-                                start.atStartOfDay(),
-                                end.plusDays(1).atStartOfDay())
-                        .groupBy("year")
-                        .orderByAsc("year")
-        );
-    }
+                    .select("DATE_FORMAT(time, '%Y') AS year","COUNT(*) AS totalCount","SUM(token) AS totalTokens")
+                    .eq("user_id", userId)
+                    .ge("time", start.atStartOfDay())
+                    .lt("time", end.plusDays(1).atStartOfDay())
+                    .groupBy("DATE_FORMAT(time, '%Y')")  // 不依赖别名
+                    .orderByAsc("DATE_FORMAT(time, '%Y')")
+            );
+        }
+
     public List<Map<String, Object>> statByMonth(String userId,
-                                                 LocalDate start,
-                                                 LocalDate end) {
+                                                LocalDate start,
+                                                LocalDate end) {
+            return usageMapper.selectMaps(
+                new QueryWrapper<UserUsageDaily>()
+                    .select("DATE_FORMAT(time, '%Y-%m') AS month","COUNT(*) AS totalCount",
+                            "SUM(token) AS totalTokens")
+                    .eq("user_id", userId)
+                    .ge("time", start.atStartOfDay())
+                    .lt("time", end.plusDays(1).atStartOfDay())
+                    .groupBy("DATE_FORMAT(time, '%Y-%m')")  // 不依赖别名
+                    .orderByAsc("DATE_FORMAT(time, '%Y-%m')")
+            );
+        }
+    public List<Map<String,Object>> statByModel(String userId){
         return usageMapper.selectMaps(
                 new QueryWrapper<UserUsageDaily>()
-                        .select("DATE_FORMAT(time,'%Y-%m') AS month",
-                                "SUM(token) AS totalTokens")
-                        .eq("user_id", userId)
-                        .between("time",
-                                start.atStartOfDay(),
-                                end.plusDays(1).atStartOfDay())
-                        .groupBy("month")
-                        .orderByAsc("month")
+                        .select("chat_model AS model","SUM(token) AS totalTokens")
+                        .eq("user_id",userId)
+                        .groupBy("chat_model")
+                        .orderByDesc("totalTokens")
         );
+    }
+    public Map<String,Object> statPromptCompletion(String userId){
+
+        Map<String,Object> map =
+                usageMapper.selectMaps(
+                        new QueryWrapper<UserUsageDaily>()
+                                .select(
+                                        "SUM(prompt_tokens) AS promptTokens",
+                                        "SUM(completion_tokens) AS completionTokens"
+                                )
+                                .eq("user_id",userId)
+                ).get(0);
+
+        return map;
     }
     public void addUsage(String userId,
                          String type,
@@ -118,8 +160,10 @@ public class UserUsageDailyServiceImpl extends ServiceImpl<UserUsageDailyMapper,
 
         UserUsageDaily usage = new UserUsageDaily();
         usage.setUserId(userId);
+        usage.setFromWhere(from);
         usage.setType(type);
         usage.setToken(tokens);
+        usage.setChatModel(model);
         usage.setPromptTokens(promptTokens);
         usage.setCompletionTokens(completionTokens);
         usage.setCachedTokens(cachedTokens);

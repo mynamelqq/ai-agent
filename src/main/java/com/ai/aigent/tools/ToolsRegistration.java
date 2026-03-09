@@ -13,11 +13,12 @@ import java.util.List;
 @Configuration
 public class ToolsRegistration {
     private WebSearchTool webSearchTool;
+    private ImageGenerateTool imageGenerateTool;
     private FileOperationTool fileOperationTool;
+    private DownloadResourceTool downloadResourceTool;
     @Bean
     public List<ToolCallback> ToolCallback() {//对话工具调用
         WebScrapingTool webScrapingTool = new WebScrapingTool();
-        DownloadResourceTool resourceDownloadTool = new DownloadResourceTool();
         TerminalOpTool terminalOperationTool = new TerminalOpTool();
 //        SpecialFileGenerationTool specialFileGenerationTool = new SpecialFileGenerationTool();
         TimeTool timeTool=new TimeTool();
@@ -25,9 +26,9 @@ public class ToolsRegistration {
         return Arrays.stream(ToolCallbacks.from(timeTool,
                 terminateTool,
             fileOperationTool,
-            webSearchTool,
+            webSearchTool,imageGenerateTool,
             webScrapingTool,
-            resourceDownloadTool,
+            downloadResourceTool,
             terminalOperationTool
 //                specialFileGenerationTool
         )).toList();
@@ -35,17 +36,16 @@ public class ToolsRegistration {
     @Bean
     public ToolCallback[] toolCallback() {//智能体工具调用
         WebScrapingTool webScrapingTool = new WebScrapingTool();
-        DownloadResourceTool resourceDownloadTool = new DownloadResourceTool();
         TerminalOpTool terminalOperationTool = new TerminalOpTool();
-//        SpecialFileGenerationTool specialFileGenerationTool = new SpecialFileGenerationTool();
         TimeTool timeTool=new TimeTool();
         TerminateTool terminateTool=new TerminateTool();
         return ToolCallbacks.from(timeTool,
                 terminateTool,
             fileOperationTool,
             webSearchTool,
+            imageGenerateTool,
             webScrapingTool,
-            resourceDownloadTool,
+            downloadResourceTool,
             terminalOperationTool
         );
     }

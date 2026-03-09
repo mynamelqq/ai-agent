@@ -5,6 +5,7 @@ import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.domin.AiAttachment;
 import com.ai.aigent.entity.dto.UploadFileDTO;
 import com.ai.aigent.service.AiAttachmentService;
+import com.ai.aigent.service.UsersService;
 import com.ai.aigent.service.impl.CosUploadService;
 import com.ai.aigent.utils.IdGenerator;
 import com.ai.aigent.utils.JWTUtils;
@@ -57,7 +58,8 @@ public class UploadController {
     }
     @Autowired
     private COSClient  cosClient;
-
+    @Autowired
+    private UsersService usersService;
     @PostMapping("/confirm")
     @Transactional
     public Result<String> confirmUpload(@RequestBody UploadFileDTO req, HttpServletRequest request) {
@@ -68,9 +70,9 @@ public class UploadController {
         att.setFileType(req.getFile_type());
         att.setChatId(req.getChat_id());
         att.setConservationId(req.getConservation_id());
-        Object token = request.getHeader("Authorization").substring("Bearer ".length());
-        if (token != null && JWTUtils.validateToken(token.toString())) {
-            att.setUserId(Long.parseLong(JWTUtils.getUserId(token.toString())));
+        String userId = usersService.getLoginUser(request);
+        if(userId.isBlank()){
+            return Result.error("请先登录");
         }
         String s = IdGenerator.createDefault().numericId(15);
         att.setId(Long.parseLong(s));

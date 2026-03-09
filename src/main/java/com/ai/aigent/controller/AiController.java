@@ -9,6 +9,7 @@ import com.ai.aigent.entity.domin.Conversation;
 import com.ai.aigent.entity.dto.ChatSendReq;
 import com.ai.aigent.entity.dto.ReadReq;
 import com.ai.aigent.entity.dto.RegenDTO;
+import com.ai.aigent.entity.dto.VideoUnderstandReq;
 import com.ai.aigent.service.*;
 import com.ai.aigent.utils.CosyVoiceTtsService;
 import com.ai.aigent.utils.JWTUtils;
@@ -50,6 +51,8 @@ public class AiController {
     private UserUsageDailyService dailyService;
     @Autowired
     private CancelTokenRegistry cancelTokenRegistry;
+    @Autowired
+    private VideoUnderstandingService videoUnderstandingService;
     @PostMapping("/chat/cancel")
     public Result cancel(@RequestParam String chatId) {
         // 找到对应的 sink 或 subscription 取消掉
@@ -67,7 +70,7 @@ public class AiController {
         .update();
         String uid;
         String type;
-        if(token!=null ){
+        if(token!=null&&!token.isEmpty()){
             token=token.substring("Bearer ".length());
             uid = JWTUtils.getUserId(token);
             type = "user";
@@ -96,7 +99,7 @@ public class AiController {
         .update();
         String uid;
         String type;
-        if(token!=null){
+        if(token!=null&&!token.isEmpty()){
             token=JWTUtils.extractToken(token);
             uid = JWTUtils.getUserId(token);
             type = "user";
@@ -150,6 +153,10 @@ public class AiController {
     @PostMapping("/stop")
     public void stop(@RequestBody ReadReq req) {
         ttsService.stop(req.getSessionId());
+    }
+    @PostMapping("/video/understand")
+    public Result<String> understandVideo(@RequestBody VideoUnderstandReq req) {
+        return Result.success(videoUnderstandingService.understand(req));
     }
 
 }

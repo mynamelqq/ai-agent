@@ -45,6 +45,7 @@ public abstract class BaseAgent {
     private AttachmentReaderUtil attachmentReaderUtil;
     private int maxStep=16;
     private String SystemSuffix;
+    private String userId;
     private ChatClient chatClient;
     private String sessionId;
     private List<Media>mediaList;
@@ -78,8 +79,9 @@ public abstract class BaseAgent {
     protected void cleanup(){
          agentState = AgentState.IDLE;
     }
-     public SseEmitter runStream(String userPrompt,String sessionId,List<Long>attachments) {
+     public SseEmitter runStream(String userPrompt,String sessionId,List<Long>attachments,String userId) {
         this.sessionId = sessionId;
+        this.userId=userId;
         emitter = new SseEmitter(1000 * 60 * 8L);
         agentSessionRegistry.register(sessionId, this);
         emitter.onCompletion(() -> agentSessionRegistry.remove(sessionId));
@@ -93,7 +95,7 @@ public abstract class BaseAgent {
                 messageList.add(new UserMessage(userPrompt));
                   if (attachments != null && !attachments.isEmpty()) {
                       emit(AgentEvent.attachmentLoading()); // 通知前端"正在读取附件"
-                      String attachmentContent = loadAttachments(attachments);
+                      String attachmentContent = loadAttachments(attachments, userPrompt);
                       if (!attachmentContent.isEmpty()) {
                           this.setSystemSuffix(attachmentContent);
                       }
@@ -124,7 +126,7 @@ public abstract class BaseAgent {
         });
         return emitter;
     }
-    private String loadAttachments(List<Long> attachmentIds) {
+    private String loadAttachments(List<Long> attachmentIds, String userPrompt) {
         StringBuilder attachmentContent = new StringBuilder();
         List<AiAttachment> aiAttachments = attachmentService.listByIds(attachmentIds);
 
@@ -146,7 +148,7 @@ public abstract class BaseAgent {
             }
             try {
                 attachmentContent.append(
-                    attachmentReaderUtil.readContent(aiAttachment)
+                    attachmentReaderUtil.readContent(aiAttachment, userPrompt)
                 ).append("\n");
             } catch (Exception e) {
                 log.error("读取文本附件失败: {}", aiAttachment.getFileName(), e);

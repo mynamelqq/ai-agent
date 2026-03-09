@@ -3,6 +3,7 @@ package com.ai.aigent.service.impl;
 import com.ai.aigent.entity.domin.AnonymousUser;
 import com.ai.aigent.mapper.AnonymousUserMapper;
 import com.ai.aigent.service.AnonymousUserService;
+import com.ai.aigent.service.UserSettingService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,6 +23,8 @@ import java.util.UUID;
 @Service
 public class AnonymousUserServiceImpl extends ServiceImpl<AnonymousUserMapper, AnonymousUser>
     implements AnonymousUserService{
+    @Autowired
+    private UserSettingService userSettingService;
     @Autowired
     private AnonymousUserMapper repository;
     @Override
@@ -52,6 +55,7 @@ public class AnonymousUserServiceImpl extends ServiceImpl<AnonymousUserMapper, A
         user.setDailyTokenLimit(100000);
         user.setLastActiveAt(new Date());
         repository.insert(user);
+        userSettingService.createDefaultSetting(newAnonId);
         return user;
     }
     public Boolean hasAnnoID(HttpServletRequest req)
@@ -76,7 +80,21 @@ public class AnonymousUserServiceImpl extends ServiceImpl<AnonymousUserMapper, A
         if (anonId == null || anonId.isEmpty()) {
             throw new IllegalArgumentException("参数 annoId 不能为空");
         }
-        return repository.selectById(anonId);
+        AnonymousUser user=repository.selectById(anonId);
+        if(user==null){
+            user = new AnonymousUser();
+            String ip = req.getRemoteAddr();
+            user.setAnonId(anonId);
+            user.setIp(ip);
+            user.setTotalTokensUsed(0L);
+            user.setCreatedAt(new Date());
+            user.setFingerprintHash("req");
+            user.setDailyTokenLimit(100000);
+            user.setLastActiveAt(new Date());
+            repository.insert(user);
+            userSettingService.createDefaultSetting(anonId);
+        }
+        return user;
     }
 }
 

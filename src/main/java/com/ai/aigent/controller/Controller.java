@@ -6,17 +6,17 @@ import com.ai.aigent.constant.ExecErrorType;
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.VO.AttachmentVO;
 import com.ai.aigent.entity.VO.ChatMessageVO;
-import com.ai.aigent.entity.domin.AiAttachment;
-import com.ai.aigent.entity.domin.ChatMessage;
-import com.ai.aigent.entity.domin.ChatSummary;
-import com.ai.aigent.entity.domin.Conversation;
+import com.ai.aigent.entity.domin.*;
 import com.ai.aigent.exception.BusinessException;
 import com.ai.aigent.service.*;
 import com.ai.aigent.utils.JWTUtils;
 import com.ai.aigent.utils.KryoUtils;
 import com.ai.aigent.utils.PdfExportUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
+import com.baomidou.mybatisplus.extension.conditions.query.QueryChainWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -33,9 +33,8 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.security.auth.login.LoginException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.time.LocalDate;
+import java.util.*;
 import java.util.stream.Collectors;
 
 
@@ -51,6 +50,8 @@ public class Controller {
     private ChatSummaryService chatSummaryService;
     @Resource
     private UsersService usersService;
+    @Resource
+    private UserUsageDailyService userUsageDailyService;
     @GetMapping("/list/chat")
     public Result<List<Conversation>> listChatConservations(HttpServletRequest request)
     {
@@ -216,4 +217,114 @@ public class Controller {
                 .like(Conversation::getTitle, keyword));
         return Result.success(list);
     }
+    @GetMapping("/get/usage")
+    public Result<Map<String, Object>> getUsage(HttpServletRequest request) {
+        String type="anno";
+        String authorization = request.getHeader("Authorization");
+        if(authorization!=null&&!authorization.isEmpty()){
+            type="user";
+        }
+        String userId = usersService.getLoginUser(request);
+        Long total_token = userUsageDailyService.getUsage(request);
+
+        Map<String,Object>map=new HashMap<>();
+        map.put("total",userUsageDailyService.count(new LambdaQueryWrapper<UserUsageDaily>()
+                .eq(UserUsageDaily::getUserId,userId)));//调用总数
+        map.put("total_token",total_token);//总计消耗token
+
+        QueryWrapper<UserUsageDaily> wrapper = new QueryWrapper<>();
+        wrapper.eq("user_id", userId)
+               .ge("time", LocalDate.now().atStartOfDay())
+               .lt("time", LocalDate.now().plusDays(1).atStartOfDay())
+               .select("SUM(token) as total");
+        List<Map<String, Object>> maps = userUsageDailyService.getBaseMapper().selectMaps(wrapper);
+
+        Long total = maps.isEmpty() ? 0 : ((Number) maps.get(0).get("total")).longValue();
+        map.put("today_token_quota",userUsageDailyService.getDailyLimit(userId,type));
+        map.put("today_token",total);
+       LocalDate today = LocalDate.now();
+
+        Long todayCount = userUsageDailyService.count(
+            new LambdaQueryWrapper<UserUsageDaily>()
+                .eq(UserUsageDaily::getUserId, userId)
+                .ge(UserUsageDaily::getTime, today.atStartOfDay())          // >= 今天 00:00:00
+                .lt(UserUsageDaily::getTime, today.plusDays(1).atStartOfDay()) // < 明天 00:00:00
+        );
+
+
+        map.put("today_calls", todayCount);
+        return Result.success(map);
+    }
+    @GetMapping("/stat/hour")
+    public Result<List<Map<String,Object>>> statByHour(
+            @RequestParam String date,
+            HttpServletRequest request){
+        String userId = usersService.getLoginUser(request);
+        LocalDate localDate = LocalDate.parse(date);
+        List<Map<String,Object>> data =
+                userUsageDailyService.statByHour(userId, localDate);
+        return Result.success(data);
+    }
+
+    /**
+     * 按月统计
+     */
+    @GetMapping("/stat/month")
+    public Result<List<Map<String,Object>>> statByMonth(
+            @RequestParam String start,
+            @RequestParam String end,
+            HttpServletRequest request){
+        String userId = usersService.getLoginUser(request);
+        LocalDate startDate = LocalDate.parse(start);
+        LocalDate endDate = LocalDate.parse(end);
+        List<Map<String,Object>> data =
+                userUsageDailyService.statByMonth(userId,startDate,endDate);
+        return Result.success(data);
+    }
+    /**
+     * 按年统计
+     */
+    @GetMapping("/stat/year")
+    public Result<List<Map<String,Object>>> statByYear(
+            @RequestParam String start,
+            @RequestParam String end,
+            HttpServletRequest request){
+        String userId = usersService.getLoginUser(request);
+        LocalDate startDate = LocalDate.parse(start);
+        LocalDate endDate = LocalDate.parse(end);
+        List<Map<String,Object>> data =
+                userUsageDailyService.statByYear(userId,startDate,endDate);
+        return Result.success(data);
+    }
+    @GetMapping("/stat/model")
+    public Result<List<Map<String,Object>>> statByModel(HttpServletRequest request){
+
+        String userId = usersService.getLoginUser(request);
+
+        List<Map<String,Object>> data =
+                userUsageDailyService.statByModel(userId);
+
+        return Result.success(data);
+    }
+    @GetMapping("/stat/promptCompletion")
+    public Result<Map<String,Object>> statPromptCompletion(HttpServletRequest request){
+
+        String userId = usersService.getLoginUser(request);
+        Map<String,Object> data =
+                userUsageDailyService.statPromptCompletion(userId);
+
+        return Result.success(data);
+    }
+    @GetMapping("/stat")
+    public Result<IPage<UserUsageDaily>>statModelRecords(HttpServletRequest request,Integer page)
+    {
+        String userId = usersService.getLoginUser(request);
+         LambdaQueryWrapper<UserUsageDaily> queryWrapper = new LambdaQueryWrapper<UserUsageDaily>()
+            .eq(UserUsageDaily::getUserId, userId)
+            .orderByDesc(UserUsageDaily::getTime);  // 按时间倒序排列
+        // 执行分页查询
+        Page<UserUsageDaily>resultPage= userUsageDailyService.page(new Page<>(page, 15), queryWrapper);
+        return Result.success(resultPage);
+    }
+
 }

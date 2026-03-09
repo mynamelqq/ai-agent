@@ -9,7 +9,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class AgentSessionRegistry {
      private final Map<String, BaseAgent> sessions = new ConcurrentHashMap<>();
-
         public void register(String sessionId, BaseAgent agent) {
             sessions.put(sessionId, agent);
         }
@@ -20,7 +19,6 @@ public class AgentSessionRegistry {
                 agent.cancel();
             }
         }
-
         public void remove(String sessionId) {
             sessions.remove(sessionId);
         }

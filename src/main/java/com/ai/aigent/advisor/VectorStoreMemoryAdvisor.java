@@ -30,7 +30,7 @@ public class VectorStoreMemoryAdvisor implements CallAdvisor, StreamAdvisor {
     private ChatMessageService chatMessageService;
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest chatClientRequest, CallAdvisorChain callAdvisorChain) {
-  List<Document> docs = vectorStore.similaritySearch(
+        List<Document> docs = vectorStore.similaritySearch(
                         SearchRequest.builder()
                                 .query(chatClientRequest.prompt().getInstructions().getLast().getText())
                                 .similarityThreshold(0.40)

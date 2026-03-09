@@ -43,7 +43,9 @@ public class jwtHandler extends OncePerRequestFilter {
     }
   private static final Set<String> White_LIST = new HashSet<>(Arrays.asList(
         "/register","/login","/api/user/refresh/**","/api/export/**","/api/ws/asr","/api/ai/ocr/**",
-          "/api/ai/read/**","/api/ai/stop/**","/api/ws/tts"
+          "/api/ai/read/**","/api/ai/stop/**","/api/ws/tts",
+          "/api/ws/notification/**","/api/notifications/broadcast",
+          "/api/doc.html","/api/webjars/**","/api/favicon.ico","/api/v3/**"
     ));
    @Override
     protected void doFilterInternal(HttpServletRequest request,

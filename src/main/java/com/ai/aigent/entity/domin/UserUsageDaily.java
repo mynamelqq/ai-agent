@@ -23,6 +23,6 @@ public class UserUsageDaily {
     private Integer promptTokens;
     private Integer cachedTokens;
     private String chatModel;
-    private String from;//来自对话还是智能体
+    private String fromWhere;//来自对话还是智能体
     private Integer completionTokens;
 }
