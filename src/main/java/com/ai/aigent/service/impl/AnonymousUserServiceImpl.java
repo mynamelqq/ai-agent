@@ -52,10 +52,10 @@ public class AnonymousUserServiceImpl extends ServiceImpl<AnonymousUserMapper, A
         user.setIp(ip);
         user.setTotalTokensUsed(0L);
         user.setCreatedAt(new Date());
-        user.setDailyTokenLimit(100000);
+        user.setDailyTokenLimit(20000);
         user.setLastActiveAt(new Date());
         repository.insert(user);
-        userSettingService.createDefaultSetting(newAnonId);
+        userSettingService.createDefaultSetting(newAnonId,"anno");
         return user;
     }
     public Boolean hasAnnoID(HttpServletRequest req)
@@ -92,7 +92,7 @@ public class AnonymousUserServiceImpl extends ServiceImpl<AnonymousUserMapper, A
             user.setDailyTokenLimit(100000);
             user.setLastActiveAt(new Date());
             repository.insert(user);
-            userSettingService.createDefaultSetting(anonId);
+            userSettingService.createDefaultSetting(anonId,"anno");
         }
         return user;
     }

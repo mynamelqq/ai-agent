@@ -20,11 +20,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.ApplicationContext;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -42,23 +39,13 @@ public class AgentController {
     @Resource
     private CodeApp codeApp;
 
-//    private Manus manus;
-    @Resource
-    private ToolCallback[]toolCallBacks;
-    @Resource
-    @Qualifier("dashScopeChatModel")
-    private ChatModel dashscopeChatModel;
-    @Resource
-    private ConversationService conversationService;
-    @Autowired
-    private UserUsageDailyService userUsageDailyService;
     @Autowired
     private UsersService usersService;
     @Autowired
     private AnonymousUserService anonymousUserService;
     @Autowired
     private UserUsageDailyService dailyService;
-    private final ApplicationContext applicationContext;
+    private final ObjectProvider<Manus> manusProvider;
     @Autowired
     private AgentSessionService agentSessionService;
     @Autowired
@@ -188,8 +175,7 @@ public class AgentController {
             type = "anon";
         }
         dailyService.checkAndConsume(uid,type);
-        // 4. 每次取新的 prototype bean，避免状态污染
-        Manus manus = applicationContext.getBean(Manus.class);
+        Manus manus = manusProvider.getObject();
         // 6. 启动流
         return manus.runStream(prompt,sessionId,agentSendReq.getAttachments(),userId);
     }

@@ -17,6 +17,6 @@ public interface UserSettingService extends IService<UserSetting> {
     /**
      * 获取用户设置
      */
-    UserSetting getByUserId(String userId);
-    UserSetting createDefaultSetting(String userId);
+    UserSetting getByUserId(String userId,String type);
+    UserSetting createDefaultSetting(String userId,String type);
 }

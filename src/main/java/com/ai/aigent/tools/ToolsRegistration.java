@@ -24,7 +24,7 @@ public class ToolsRegistration {
         TimeTool timeTool=new TimeTool();
         TerminateTool terminateTool=new TerminateTool();
         return Arrays.stream(ToolCallbacks.from(timeTool,
-                terminateTool,
+//                terminateTool,
             fileOperationTool,
             webSearchTool,imageGenerateTool,
             webScrapingTool,
@@ -38,9 +38,8 @@ public class ToolsRegistration {
         WebScrapingTool webScrapingTool = new WebScrapingTool();
         TerminalOpTool terminalOperationTool = new TerminalOpTool();
         TimeTool timeTool=new TimeTool();
-        TerminateTool terminateTool=new TerminateTool();
         return ToolCallbacks.from(timeTool,
-                terminateTool,
+//                terminateTool,
             fileOperationTool,
             webSearchTool,
             imageGenerateTool,

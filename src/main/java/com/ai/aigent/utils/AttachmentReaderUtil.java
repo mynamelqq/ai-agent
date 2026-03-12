@@ -87,7 +87,7 @@ public class AttachmentReaderUtil {
 //        else if(fileType.startsWith("audio/")){
 //
 //        }
-        if (fileType.startsWith("/video/"))
+        if (fileType.toLowerCase().startsWith("video"))
         {
             try {
                 VideoUnderstandReq req = new VideoUnderstandReq();

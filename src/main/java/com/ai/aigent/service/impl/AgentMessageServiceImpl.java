@@ -17,20 +17,34 @@ import org.springframework.stereotype.Service;
 public class AgentMessageServiceImpl extends ServiceImpl<AgentMessageMapper, AgentMessage>
     implements AgentMessageService{
     public AgentMessage saveAgentMessage(String sessionId, String type, AgentMessagePayload payload,
-                                         Integer token,Long thinkingTime,Long cost, Integer promptTokens,  Integer completionTokens,Integer cachedTokens)
+                                         Integer token,Long thinkingTime,Long cost, Integer promptTokens,
+                                         Integer completionTokens,Integer cachedTokens)
     {
         AgentMessage msg = new AgentMessage();
         msg.setPayload(JSONUtil.toJsonStr(payload));
         msg.setSessionId(sessionId);
-        msg.setCost(cost.intValue());
+        msg.setCost(safeToDbInt(cost));
         msg.setCachedTokens(cachedTokens);
         msg.setPromptTokens(promptTokens);
         msg.setCompletionTokens(completionTokens);
         msg.setType(type);
-        msg.setThinkingTime(thinkingTime.intValue());
+        msg.setThinkingTime(safeToDbInt(thinkingTime));
         msg.setCreatedAt(new java.util.Date());
         msg.setTokens(token);
         return save(msg)?msg:null;
+    }
+
+    private static Integer safeToDbInt(Long value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value <= 0L) {
+            return 0;
+        }
+        if (value > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        return value.intValue();
     }
 
 }

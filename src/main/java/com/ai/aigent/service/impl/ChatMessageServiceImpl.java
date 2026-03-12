@@ -39,7 +39,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             AssistantMessage build = AssistantMessage.builder().content(message).build();
             ChatMessage entity = new ChatMessage();
             entity.setConversationId(conversationId);
-            entity.setThinkingTime(thinkingTime.intValue());
+            entity.setThinkingTime(safeToDbInt(thinkingTime));
             entity.setCreateTime(LocalDateTime.now());
             entity.setPayload(KryoUtils.serialize(build));
             entity.setIsDeleted(0);entity.setToken(token);entity.setCost(cost);
@@ -64,10 +64,10 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                     .update();
         }
         else{
-            this.lambdaUpdate().eq(ChatMessage::getId, messageId)
+             this.lambdaUpdate().eq(ChatMessage::getId, messageId)
                 .set(ChatMessage::getPayload, KryoUtils.serialize(new AssistantMessage(message)))
                     .set(ChatMessage::getCost,cost)
-                    .set(ChatMessage::getThinkingTime,thinkingTime.intValue())
+                    .set(ChatMessage::getThinkingTime,safeToDbInt(thinkingTime))
                     .setSql("prompt_tokens = prompt_tokens + "+promptTokens)
                     .setSql("completion_tokens = completion_tokens + "+completionTokens)
                     .setSql("cached_tokens = cached_tokens + "+cachedTokens)
@@ -119,7 +119,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         if(conversation==null){
             return Collections.emptyList();
         }
-        String userId = conversation.getUser_id();
+        String userId = conversation.getUserId();
         UserSetting userSetting = userSettingService.getById(userId);//只获取不创建
         if(userSetting!=null){
             lastN=userSetting.getContextWindow();
@@ -178,6 +178,19 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             e.printStackTrace();
             throw new RuntimeException();
         }
+    }
+
+    private static Integer safeToDbInt(Long value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value <= 0L) {
+            return 0;
+        }
+        if (value > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        return value.intValue();
     }
 
 }

@@ -1,9 +1,13 @@
 package com.ai.aigent.consumer;
 
+import cn.hutool.core.util.RandomUtil;
+import cn.hutool.json.JSONUtil;
 import com.ai.aigent.constant.AiCientConstans;
 import com.ai.aigent.entity.domin.ChatMessage;
+import com.ai.aigent.entity.dto.ChatEmbeddingDTO;
 import com.ai.aigent.service.ChatMessageService;
 import com.ai.aigent.service.ChatSummaryService;
+import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +18,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
+import org.springframework.ai.document.Document;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -25,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 @Slf4j
@@ -85,36 +91,36 @@ public class RabbitConsumer {
     private JdbcTemplate jdbcTemplate;
     @Resource
     private VectorStore codeAppVectorStore;
-//    @Transactional
-//    @RabbitListener(queues = "ChatVectorStoreQueue")
-//    public void receiveMessageFromVectorStore(String  message) {
-//        ChatEmbeddingDTO dto = JSONUtil.toBean(message, ChatEmbeddingDTO.class, true);
-//         try {
-//            // 1️⃣ 拼接 Q + A（向量内容）
-//             String content = buildContent(dto.getUserMessage(), dto.getAssistantMessage());
-//            if (StringUtils.isBlank(dto.getUserId())) {
-//                dto.setUserId(RandomUtil.randomNumbers(10));
-//            }
-//            List<String> chunks = splitByTokens(content);
-//            for (String chunk : chunks) {
-//                String documentId = UUID.randomUUID().toString();
-//                Document document = new Document(documentId, chunk, Map.of());
-//                codeAppVectorStore.add(List.of(document));
-//                jdbcTemplate.update(
-//                    "insert into chat_memory_vector (id, user_id, conservation_id, memory_type, created_at, is_deleted) values (?, ?, ?, ?, now(), false)",
-//                    documentId,
-//                    Long.parseLong(dto.getUserId()),
-//                    dto.getChatId(),
-//                    dto.getMemoryType()
-//                );
-//
-//                log.info("Vector saved: userId={}, sessionId={}, documentId={}",
-//                        dto.getUserId(), dto.getChatId(), documentId);
-//            }
-//            } catch (Exception e) {
-//                log.error("ChatVectorStore 消费失败: {}", dto, e);
-//            }
-//    }
+    @Transactional
+    @RabbitListener(queues = "ChatVectorStoreQueue")
+    public void receiveMessageFromVectorStore(String  message) {
+        ChatEmbeddingDTO dto = JSONUtil.toBean(message, ChatEmbeddingDTO.class, true);
+         try {
+            // 1️⃣ 拼接 Q + A（向量内容）
+             String content = buildContent(dto.getUserMessage(), dto.getAssistantMessage());
+            if (StringUtils.isBlank(dto.getUserId())) {
+                dto.setUserId(RandomUtil.randomNumbers(10));
+            }
+            List<String> chunks = splitByTokens(content);
+            for (String chunk : chunks) {
+                String documentId = UUID.randomUUID().toString();
+                Document document = new Document(documentId, chunk, Map.of());
+                codeAppVectorStore.add(List.of(document));
+                jdbcTemplate.update(
+                    "insert into chat_memory_vector (id, user_id, conservation_id, memory_type, created_at, is_deleted) values (?, ?, ?, ?, now(), false)",
+                    documentId,
+                    Long.parseLong(dto.getUserId()),
+                    dto.getChatId(),
+                    dto.getMemoryType()
+                );
+
+                log.info("Vector saved: userId={}, sessionId={}, documentId={}",
+                        dto.getUserId(), dto.getChatId(), documentId);
+            }
+            } catch (Exception e) {
+                log.error("ChatVectorStore 消费失败: {}", dto, e);
+            }
+    }
 
     private List<String> splitByTokens(String content) {
         List<String> chunks = new ArrayList<>();
