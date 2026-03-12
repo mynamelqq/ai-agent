@@ -42,6 +42,7 @@ public class ChatMessage {
     private Integer cachedTokens;
     private Integer completionTokens;
     private Integer token;
+    private Boolean isFavor;
     private Boolean isSearch;
     private LocalDateTime createTime;
 }

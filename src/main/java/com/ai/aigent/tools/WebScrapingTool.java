@@ -7,17 +7,17 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.stereotype.Component;
 
+@Component
 public class WebScrapingTool {
     private final ObjectMapper objectMapper = new ObjectMapper();
     @Tool(description = "抓取指定网页的正文文本内容（不执行JS，仅用于信息提取）")
 public String fetchWebPage(
-        @ToolParam(description = "要抓取的网页 URL") String url) {
-
+        @ToolParam(description = "要抓取的网页URL") String url) {
         if (url == null || url.isBlank()) {
             return toJson(WebPageFetchResponseDTO.error(null, "url 不能为空"));
         }
-
         try {
             Document doc = Jsoup.connect(url)
                     .userAgent("Mozilla/5.0 (compatible; SpringAI-WebFetcher/1.0)")
@@ -32,7 +32,7 @@ public String fetchWebPage(
             // 3️⃣ 清洗文本
             text = normalizeText(text);
             // 4️⃣ 限制长度（防止 token 爆炸）
-            int MAX_CHARS = 3000;
+            int MAX_CHARS = 6000;
             if (text.length() > MAX_CHARS) {
                 text = text.substring(0, MAX_CHARS) + "...";
             }
@@ -57,7 +57,7 @@ public String fetchWebPage(
             Element element = doc.selectFirst(selector);
             if (element != null) {
                 String text = element.text();
-                if (text != null && text.length() > 200) { // 关键阈值
+                if (text != null && text.length() > 300) { // 关键阈值
                     return text;
                 }
             }

@@ -15,6 +15,7 @@ public class ChatMessageVO {
     private String messageType;
     private String payload;
     List<AttachmentVO>aiAttachments;
+    private Boolean isFavor;
     private Integer cost;
     private Integer thinkingTime;
     private LocalDateTime createTime;

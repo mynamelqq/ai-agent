@@ -78,6 +78,40 @@ import java.util.stream.Collectors;
 @Component
 @Slf4j
 public class CodeApp {
+    static final String ANALYSIS_MARKER = "analysis";
+    static final String ASSISTANT_ANALYSIS_MARKER = "assistantanalysis";
+    static final String ASSISTANT_COMMENTARY_MARKER = "assistantcommentary";
+    static final String ASSISTANT_FINAL_MARKER = "assistantfinal";
+    enum WrappedTextMode {
+        UNDECIDED,
+        NORMAL,
+        REASONING,
+        COMMENTARY,
+        FINAL
+    }
+    static final class StreamTextParseState {
+        private WrappedTextMode mode = WrappedTextMode.UNDECIDED;
+        private final StringBuilder pending = new StringBuilder();
+    }
+
+    static final class ParsedTextChunk {
+        private final String reasoning;
+        private final String text;
+
+        ParsedTextChunk(String reasoning, String text) {
+            this.reasoning = reasoning;
+            this.text = text;
+        }
+
+        String reasoning() {
+            return reasoning;
+        }
+
+        String text() {
+            return text;
+        }
+    }
+
     private ChatClient.Builder chatClientBuilder;
     private final JdbcChatMemoryAdvisor chatMemory;
     @Resource
@@ -87,7 +121,6 @@ public class CodeApp {
 //    private OllamaChatModel ollamaChatModel;
     public OpenAiChatModel openAiChatModel;
     private OpenAiChatOptions.Builder chatOptionsBuilder;
-//    private OpenAiChatOptions.Builder chatOptionsBuilder;
     @Resource
     @Qualifier("zhiPuAiChatModel")
     private ZhiPuAiChatModel zhiPuAiChatModel;
@@ -132,6 +165,8 @@ public class CodeApp {
     }
     @Autowired
     private WebSearchTool webSearchTool;
+    @Autowired
+    private WebScrapingTool webScrapingTool;
     @Resource
     private RabbitTemplate rabbitTemplate;
     @Autowired
@@ -140,127 +175,12 @@ public class CodeApp {
     private AiAttachmentService attachmentService;
     @Autowired
     private FileOperationTool fileOperationTool;
-
-//    public Flux<ChatResponse> doChatStream(ChatSendReq chatSendReq, String userId) {
-//        String chatId = chatSendReq.getChatId();
-//        Long messageId = Long.parseLong(chatSendReq.getMessageId());
-//
-//        // 附件内容拼接
-//        StringBuilder attachmentContent = new StringBuilder();
-//        Flux<ChatResponse> prefixFlux = Flux.empty();
-//        if (!chatSendReq.getAttachments().isEmpty()) {
-//            prefixFlux = Flux.just(
-//                    ChatResponse.builder()
-//                            .generations(List.of(
-//                                    new Generation(new AssistantMessage("<<<ATTACHMENT_LOADING>>>"))
-//                            ))
-//                            .build()
-//            );
-//        }
-//        if (!chatSendReq.getAttachments().isEmpty()) {
-//            List<AiAttachment> aiAttachments = attachmentService.listByIds(chatSendReq.getAttachments());
-//            for (AiAttachment aiAttachment : aiAttachments) {
-//                attachmentContent.append(
-//                        attachmentReaderUtil.readContent(aiAttachment, messageId.toString(), chatId, chatSendReq.getMessage())
-//                ).append("\n");
-//            }
-//        }
-//        // Thinking 模式配置
-//        if (chatSendReq.getIsThinking() != null && chatSendReq.getIsThinking()) {
-//            DashScopeChatOptions dashScopeChatOptions=DashScopeChatOptions.builder().
-//                    model("qwq-32b").enableThinking(true).temperature(0.7).build();
-
-////            chatClientBuilder.defaultOptions(zhiPuAiChatOptions);
-//            chatClientBuilder.defaultOptions(dashScopeChatOptions);
-//        }
-//        ChatClient chatClient = chatClientBuilder.build();
-//
-//        // 动态工具挂载（图片生成）
-//        ToolCallback[] localToolCallbacks = null;
-//
-//
-//        String message = chatSendReq.getMessage();
-//        StringBuilder full = new StringBuilder();
-//        StringBuilder reasoningContent = new StringBuilder();
-//        chatMessageService.saveMessage(chatId, new UserMessage(message), messageId.toString());
-//        // 构建 AI 流
-//        if(chatSendReq.getIsImageGen() != null && chatSendReq.getIsImageGen()){
-//            localToolCallbacks=ToolCallbacks.from(imageGenerateTool);
-//        } else if (chatSendReq.getIsSearch()) {
-//            localToolCallbacks=ToolCallbacks.from(webSearchTool);//联网搜索工具
-//        }
-//        else if(chatSendReq.getIsGenerateFile()){
-//            localToolCallbacks=ToolCallbacks.from(fileOperationTool);
-//        }
-//        var promptBuilder = chatClient.prompt()
-//                .user(message)
-//                .system(SystemPrompt.GENERAL_SYSTEM_PROMPT + (attachmentContent.isEmpty() ? "" : attachmentContent.toString()))
-//                .advisors(advisor -> advisor
-//                        .param(ChatMemory.CONVERSATION_ID, chatId)
-//                        .param("messageId", messageId)
-//                );
-//
-//        if (localToolCallbacks != null) {
-//            promptBuilder.toolCallbacks(localToolCallbacks);
-//        }
-//        Map<String,Object>toolContext=Collections.singletonMap("chatId",chatId);
-//        Flux<ChatResponse> aiFlux = promptBuilder.toolContext(toolContext)
-//                .stream()
-//                .chatResponse()
-//                .doOnNext(chatResponse -> {
-//                    var msg = chatResponse.getResult().getOutput();
-//                    Object reasoning = msg.getMetadata().get("reasoningContent");
-//                    if (reasoning!=null) reasoningContent.append(reasoning);
-//                    if (!msg.getText().isEmpty()) full.append(msg.getText());
-////                    if (msg instanceof ZhiPuAiAssistantMessage zhipuMsg) {
-////                        String content = zhipuMsg.getText() != null ? zhipuMsg.getText() : "";
-////                        String reasoning = zhipuMsg.getReasoningContent() != null ? zhipuMsg.getReasoningContent() : "";
-////                        if (!reasoning.isEmpty()) reasoningContent.append(reasoning);
-////                        if (!content.isEmpty()) full.append(content);
-////                    }
-////                    if(!msg.getText().isEmpty())full.append(msg.getText());
-//                })
-//                .doFinally(signal -> {
-//                    // 保存聊天记录
-//                    if(chatSendReq.getIsImageGen())return;
-//                    String finalAnswer = "";
-//                    if (!reasoningContent.isEmpty()) {
-//                        reasoningContent.append("</Think>");
-//                        finalAnswer = "<Think>" + reasoningContent;
-//                    }
-//                    finalAnswer += full;
-//                    ChatEmbeddingDTO dto = new ChatEmbeddingDTO();
-//                    dto.setUserId(userId);
-//                    dto.setChatId(chatId);
-//                    dto.setUserMessage(message);
-//                    dto.setMemoryType("chat");
-//                    dto.setAssistantMessage(finalAnswer);
-//                    chatMessageService.saveAssistantMessage(chatId, finalAnswer);
-//                        // 可选：向向量库发送
-//    //                    rabbitTemplate.convertAndSend(
-//    //                            "ChatVectorStoreExchange",
-//    //                            "ChatVectorStore",
-//    //                            JSONUtil.toJsonStr(dto)
-//    //                    );
-//                })
-//                .cache(); // 热流
-//
-//            return Flux.concat(prefixFlux, aiFlux)
-//            .onErrorResume(e -> Flux.empty());
-//        }
     public DashScopeChatOptions thinking()
     {
         return DashScopeChatOptions.builder()
                     .model("qwq-plus")
                     .enableThinking(true).build();
-////            ZhiPuAiChatOptions zhiPuAiChatOptions = ZhiPuAiChatOptions.builder()
-////                    .model("glm-4.7-FlashX")
-////                    .temperature(0.6)
-////                    .thinking(ZhiPuAiApi.ChatCompletionRequest.Thinking.enabled())
-////                    .build();
     }
-    List<ToolCallback>toolCallbackList;
-
     @Transactional
    public Flux<ChatResult> doChatStream(ChatSendReq chatSendReq, String userId, String type) {
         String chatId = chatSendReq.getChatId();
@@ -278,12 +198,7 @@ public class CodeApp {
         chatOptionsBuilder= OpenAiChatOptions.builder();
         String style= "";
         String extendedPrompt="";
-
-
-
-
-         setting= userSettingService.getByUserId(userId);
-
+         setting= userSettingService.getByUserId(userId,type);
          if(setting!=null){
              chatOptionsBuilder.temperature(setting.getTemperature())
 //                     .maxCompletionTokens(setting.getMaxTokens())
@@ -314,18 +229,17 @@ public class CodeApp {
              }
              if(setting.getToolMode().equals("off")){isToolAuto.set(false);}
          }
-
         ChatClient chatClient = chatClientBuilder.build();
         // 3️⃣ 动态工具挂载
         ToolCallback[] localToolCallbacks;
         if (Boolean.TRUE.equals(chatSendReq.getIsImageGen())) {
-            localToolCallbacks = ToolCallbacks.from(imageGenerateTool);
+            localToolCallbacks = ToolCallbacks.from(imageGenerateTool,webScrapingTool);
         } else if (Boolean.TRUE.equals(chatSendReq.getIsSearch())) {
-            localToolCallbacks = ToolCallbacks.from(webSearchTool);
+            localToolCallbacks = ToolCallbacks.from(webSearchTool,webSearchTool);
         } else if (Boolean.TRUE.equals(chatSendReq.getIsGenerateFile())) {
-            localToolCallbacks = ToolCallbacks.from(fileOperationTool);
+            localToolCallbacks = ToolCallbacks.from(fileOperationTool,webSearchTool);
         } else {
-            localToolCallbacks = null;
+            localToolCallbacks = ToolCallbacks.from(webScrapingTool);
         }
         // 4️⃣ 先存用户消息
         chatMessageService.saveMessage(chatSendReq);
@@ -343,6 +257,7 @@ public class CodeApp {
         AtomicReference<Integer> cached_tokens = new AtomicReference<>(0);
         AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
+        StreamTextParseState wrappedTextState = new StreamTextParseState();
         // 5️⃣ 响应式读取附件
         Mono<String> attachmentMono = Mono.fromCallable(() -> {
             if (chatSendReq.getAttachments().isEmpty()) return "";
@@ -381,7 +296,7 @@ public class CodeApp {
         String finalSystem = system;
         Disposable disposable = attachmentMono.<ChatResponse>flatMapMany(attachmentContent -> {
             var promptBuilder = chatClient.prompt().options(chatOptionsBuilder.build())
-                    .tools(new WebScrapingTool())
+
                     .user(promptUserSpec -> promptUserSpec
                             .text(message)
                             .media(mediaList.toArray(new Media[0])))
@@ -416,33 +331,41 @@ public class CodeApp {
                 var result = chatResponse.getResult();
                 if(result==null)return;
                 var msg = result.getOutput();
-                Optional.ofNullable(msg.getMetadata())
+                String metadataReasoning = Optional.ofNullable(msg.getMetadata())
                         .map(meta -> meta.get("reasoningContent"))
                         .map(Object::toString)
-                        .ifPresent((str)->{
-                            if(str.isEmpty())return;
-                            reasoningContent.append(str);
-                            if(!isThinking.get()){
-                                isThinking.set(true);
-                                thinkingStartTime.set(System.currentTimeMillis());
-                            }
-                        });
-                String text = msg.getText();
-                if (text != null && !text.isEmpty()) {
+                        .orElse("");
+                if (!metadataReasoning.isEmpty()) {
+                    reasoningContent.append(metadataReasoning);
+                    if(!isThinking.get()){
+                        isThinking.set(true);
+                        thinkingStartTime.set(System.currentTimeMillis());
+                    }
+                }
+                ParsedTextChunk parsedTextChunk = parseStreamTextChunk(
+                        wrappedTextState,
+                        msg.getText(),
+                        metadataReasoning.isEmpty() && reasoningContent.isEmpty() && full.isEmpty()
+                );
+                if (!parsedTextChunk.reasoning().isEmpty()) {
+                    reasoningContent.append(parsedTextChunk.reasoning());
+                    if(!isThinking.get()){
+                        isThinking.set(true);
+                        thinkingStartTime.set(System.currentTimeMillis());
+                    }
+                }
+                if (!parsedTextChunk.text().isEmpty()) {
                     if(isThinking.get()){
                         isThinking.set(false);
                         thinkingEndTime.set(System.currentTimeMillis());
                     }
-                    full.append(text);
+                    full.append(parsedTextChunk.text());
                 }
                 // 构建并推入 sink
                 ChatResult chatResult = new ChatResult();
-                String reasoning = Optional.of(msg.getMetadata())
-                        .map(meta -> meta.get("reasoningContent"))
-                        .map(Object::toString).orElse("");
-                chatResult.setReasoning(reasoning);
-                if (text != null && !text.isEmpty()) {
-                    chatResult.setText(text);
+                chatResult.setReasoning(metadataReasoning + parsedTextChunk.reasoning());
+                if (!parsedTextChunk.text().isEmpty()) {
+                    chatResult.setText(parsedTextChunk.text());
                 }
                 sink.tryEmitNext(chatResult);
             } catch (Throwable e) {
@@ -451,6 +374,20 @@ public class CodeApp {
         })
         .doOnComplete(() -> {
             // 只处理 usage，不调 sink.tryEmitComplete()，交给 doFinally 统一处理
+            ParsedTextChunk tailChunk = flushStreamTextChunk(wrappedTextState);
+            if (!tailChunk.reasoning().isEmpty()) {
+                reasoningContent.append(tailChunk.reasoning());
+            }
+            if (!tailChunk.text().isEmpty()) {
+                if(isThinking.get()){
+                    isThinking.set(false);
+                    thinkingEndTime.set(System.currentTimeMillis());
+                }
+                full.append(tailChunk.text());
+                ChatResult chatResult = new ChatResult();
+                chatResult.setText(tailChunk.text());
+                sink.tryEmitNext(chatResult);
+            }
             endTime.set(System.currentTimeMillis());
             Usage usage = finalUsage.get();
             if (usage == null) return;
@@ -535,6 +472,183 @@ public class CodeApp {
     }
     @Autowired
     private CancelTokenRegistry cancelTokenRegistry;
+
+    static ParsedTextChunk parseStreamTextChunk(StreamTextParseState state, String chunk, boolean allowWrappedReasoningDetection) {
+        if (chunk == null || chunk.isEmpty()) {
+            return new ParsedTextChunk("", "");
+        }
+        state.pending.append(chunk);
+        StringBuilder reasoning = new StringBuilder();
+        StringBuilder text = new StringBuilder();
+        while (state.pending.length() > 0) {
+            if (state.mode == WrappedTextMode.UNDECIDED) {
+                if (!allowWrappedReasoningDetection) {
+                    text.append(state.pending);
+                    state.pending.setLength(0);
+                    state.mode = WrappedTextMode.NORMAL;
+                    break;
+                }
+                int leadingWhitespaceLength = leadingWhitespaceLength(state.pending);
+                CharSequence candidate = state.pending.subSequence(leadingWhitespaceLength, state.pending.length());
+                String marker = detectLeadingWrappedMarker(candidate);
+                if (marker != null) {
+                    if (candidate.length() < marker.length()) {
+                        break;
+                    }
+                    state.pending.delete(0, leadingWhitespaceLength + marker.length());
+                    state.mode = switch (marker) {
+                        case ASSISTANT_COMMENTARY_MARKER -> WrappedTextMode.COMMENTARY;
+                        case ASSISTANT_FINAL_MARKER -> WrappedTextMode.FINAL;
+                        default -> WrappedTextMode.REASONING;
+                    };
+                    continue;
+                }
+                text.append(state.pending);
+                state.pending.setLength(0);
+                state.mode = WrappedTextMode.NORMAL;
+                break;
+            }
+            if (state.mode == WrappedTextMode.NORMAL || state.mode == WrappedTextMode.FINAL) {
+                text.append(state.pending);
+                state.pending.setLength(0);
+                break;
+            }
+            MarkerMatch markerMatch = findNextWrappedMarker(state.pending);
+            if (markerMatch != null) {
+                appendWrappedSegment(reasoning, state.pending, markerMatch.index(), state.mode == WrappedTextMode.REASONING);
+                state.pending.delete(0, markerMatch.index() + markerMatch.marker().length());
+                state.mode = switch (markerMatch.marker()) {
+                    case ASSISTANT_FINAL_MARKER -> WrappedTextMode.FINAL;
+                    case ASSISTANT_COMMENTARY_MARKER -> WrappedTextMode.COMMENTARY;
+                    default -> WrappedTextMode.REASONING;
+                };
+                continue;
+            }
+            int keepLength = longestWrappedMarkerSuffixPrefixLength(state.pending);
+            int emitLength = state.pending.length() - keepLength;
+            if (emitLength <= 0) {
+                break;
+            }
+            appendWrappedSegment(reasoning, state.pending, emitLength, state.mode == WrappedTextMode.REASONING);
+            state.pending.delete(0, emitLength);
+        }
+        return new ParsedTextChunk(reasoning.toString(), text.toString());
+    }
+
+    static ParsedTextChunk flushStreamTextChunk(StreamTextParseState state) {
+        if (state.pending.isEmpty()) {
+            return new ParsedTextChunk("", "");
+        }
+        String remainder = state.pending.toString();
+        state.pending.setLength(0);
+        if (state.mode == WrappedTextMode.REASONING) {
+            return new ParsedTextChunk(remainder, "");
+        }
+        return new ParsedTextChunk("", remainder);
+    }
+
+    private static boolean startsWithOrIsPrefix(CharSequence source, String target) {
+        int length = Math.min(source.length(), target.length());
+        for (int i = 0; i < length; i++) {
+            if (source.charAt(i) != target.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String detectLeadingWrappedMarker(CharSequence source) {
+        for (String marker : wrappedMarkersByPriority()) {
+            if (startsWithOrIsPrefix(source, marker)) {
+                return marker;
+            }
+        }
+        return null;
+    }
+
+    private static MarkerMatch findNextWrappedMarker(CharSequence source) {
+        int bestIndex = Integer.MAX_VALUE;
+        String bestMarker = null;
+        for (String marker : wrappedMarkersByPriority()) {
+            int index = indexOf(source, marker);
+            if (index >= 0 && index < bestIndex) {
+                bestIndex = index;
+                bestMarker = marker;
+            }
+        }
+        return bestMarker == null ? null : new MarkerMatch(bestIndex, bestMarker);
+    }
+
+    private static int longestWrappedMarkerSuffixPrefixLength(CharSequence source) {
+        int max = 0;
+        for (String marker : wrappedMarkersByPriority()) {
+            max = Math.max(max, longestSuffixPrefixLength(source, marker));
+        }
+        return max;
+    }
+
+    private static List<String> wrappedMarkersByPriority() {
+        return List.of(
+                ASSISTANT_COMMENTARY_MARKER,
+                ASSISTANT_ANALYSIS_MARKER,
+                ASSISTANT_FINAL_MARKER,
+                ANALYSIS_MARKER
+        );
+    }
+
+    private static void appendWrappedSegment(StringBuilder reasoning, CharSequence source, int endExclusive, boolean keepContent) {
+        if (keepContent && endExclusive > 0) {
+            reasoning.append(source, 0, endExclusive);
+        }
+    }
+
+    private static int indexOf(CharSequence source, String target) {
+        if (target.isEmpty() || source.length() < target.length()) {
+            return -1;
+        }
+        for (int i = 0; i <= source.length() - target.length(); i++) {
+            boolean matches = true;
+            for (int j = 0; j < target.length(); j++) {
+                if (source.charAt(i + j) != target.charAt(j)) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int longestSuffixPrefixLength(CharSequence source, String target) {
+        int max = Math.min(source.length(), target.length() - 1);
+        for (int len = max; len > 0; len--) {
+            boolean matches = true;
+            for (int i = 0; i < len; i++) {
+                if (source.charAt(source.length() - len + i) != target.charAt(i)) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return len;
+            }
+        }
+        return 0;
+    }
+
+    private static int leadingWhitespaceLength(CharSequence source) {
+        int index = 0;
+        while (index < source.length() && Character.isWhitespace(source.charAt(index))) {
+            index++;
+        }
+        return index;
+    }
+
+    record MarkerMatch(int index, String marker) {
+    }
+
     private String buildFinalAnswer(StringBuilder reasoningContent, StringBuilder full) {
         String finalAnswer = "";
         if (!reasoningContent.isEmpty()) {
@@ -569,7 +683,7 @@ public class CodeApp {
                 new LambdaQueryWrapper<AiAttachment>().eq(AiAttachment::getChatId, userMessageId));
 
         if (Objects.equals(type, "user")) {
-            setting = userSettingService.getByUserId(userId);
+            setting = userSettingService.getByUserId(userId,"user");
             if (setting != null) {
                 chatOptionsBuilder.temperature(setting.getTemperature())
                         .frequencyPenalty(setting.getFrequencyPenalty())
@@ -613,13 +727,13 @@ public class CodeApp {
         ChatClient chatClient = chatClientBuilder.build();
         ToolCallback[] localToolCallbacks;
         if (Boolean.TRUE.equals(chatMessage.getIsImage())) {
-            localToolCallbacks = ToolCallbacks.from(imageGenerateTool);
+            localToolCallbacks = ToolCallbacks.from(imageGenerateTool,webScrapingTool);
         } else if (Boolean.TRUE.equals(chatMessage.getIsSearch())) {
-            localToolCallbacks = ToolCallbacks.from(webSearchTool);
+            localToolCallbacks = ToolCallbacks.from(webSearchTool,webScrapingTool);
         } else if (Boolean.TRUE.equals(chatMessage.getIsGenerate())) {
-            localToolCallbacks = ToolCallbacks.from(fileOperationTool);
+            localToolCallbacks = ToolCallbacks.from(fileOperationTool,webScrapingTool);
         } else {
-            localToolCallbacks = null;
+            localToolCallbacks = ToolCallbacks.from(webScrapingTool);
         }
 
         StringBuilder full = new StringBuilder();
@@ -636,6 +750,7 @@ public class CodeApp {
         AtomicReference<Integer> cached_tokens = new AtomicReference<>(0);
         AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
+        StreamTextParseState wrappedTextState = new StreamTextParseState();
 
         Mono<String> attachmentMono = Mono.fromCallable(() -> {
             if (list.isEmpty()) {
@@ -712,33 +827,40 @@ public class CodeApp {
                         var result = chatResponse.getResult();
                         if (result == null) return;
                         var msg = result.getOutput();
-                        Optional.ofNullable(msg.getMetadata())
+                        String metadataReasoning = Optional.ofNullable(msg.getMetadata())
                                 .map(meta -> meta.get("reasoningContent"))
                                 .map(Object::toString)
-                                .ifPresent((str) -> {
-                                    if (str.isEmpty()) return;
-                                    reasoningContent.append(str);
-                                    if (!isThinking.get()) {
-                                        isThinking.set(true);
-                                        thinkingStartTime.set(System.currentTimeMillis());
-                                    }
-                                });
-                        String text = msg.getText();
-                        if (text != null && !text.isEmpty()) {
+                                .orElse("");
+                        if (!metadataReasoning.isEmpty()) {
+                            reasoningContent.append(metadataReasoning);
+                            if (!isThinking.get()) {
+                                isThinking.set(true);
+                                thinkingStartTime.set(System.currentTimeMillis());
+                            }
+                        }
+                        ParsedTextChunk parsedTextChunk = parseStreamTextChunk(
+                                wrappedTextState,
+                                msg.getText(),
+                                metadataReasoning.isEmpty() && reasoningContent.isEmpty() && full.isEmpty()
+                        );
+                        if (!parsedTextChunk.reasoning().isEmpty()) {
+                            reasoningContent.append(parsedTextChunk.reasoning());
+                            if (!isThinking.get()) {
+                                isThinking.set(true);
+                                thinkingStartTime.set(System.currentTimeMillis());
+                            }
+                        }
+                        if (!parsedTextChunk.text().isEmpty()) {
                             if (isThinking.get()) {
                                 isThinking.set(false);
                                 thinkingEndTime.set(System.currentTimeMillis());
                             }
-                            full.append(text);
+                            full.append(parsedTextChunk.text());
                         }
                         ChatResult chatResult = new ChatResult();
-                        String reasoning = Optional.ofNullable(msg.getMetadata())
-                                .map(meta -> meta.get("reasoningContent"))
-                                .map(Object::toString)
-                                .orElse("");
-                        chatResult.setReasoning(reasoning);
-                        if (text != null && !text.isEmpty()) {
-                            chatResult.setText(text);
+                        chatResult.setReasoning(metadataReasoning + parsedTextChunk.reasoning());
+                        if (!parsedTextChunk.text().isEmpty()) {
+                            chatResult.setText(parsedTextChunk.text());
                         }
                         sink.tryEmitNext(chatResult);
                         if (chatResponse.hasToolCalls()) {
@@ -749,6 +871,20 @@ public class CodeApp {
                     }
                 })
                 .doOnComplete(() -> {
+                    ParsedTextChunk tailChunk = flushStreamTextChunk(wrappedTextState);
+                    if (!tailChunk.reasoning().isEmpty()) {
+                        reasoningContent.append(tailChunk.reasoning());
+                    }
+                    if (!tailChunk.text().isEmpty()) {
+                        if (isThinking.get()) {
+                            isThinking.set(false);
+                            thinkingEndTime.set(System.currentTimeMillis());
+                        }
+                        full.append(tailChunk.text());
+                        ChatResult chatResult = new ChatResult();
+                        chatResult.setText(tailChunk.text());
+                        sink.tryEmitNext(chatResult);
+                    }
                     endTime.set(System.currentTimeMillis());
                     Usage usage = finalUsage.get();
                     if (usage == null) return;
@@ -848,61 +984,6 @@ public class CodeApp {
      @Resource
      private AttachmentReaderUtil attachmentReaderUtil;
 
-    public Flux<String> doChatStreamUser(String message, String chatId)
-    {
-        ChatClient chatClient = chatClientBuilder.build();
-        return chatClient.prompt().user(message)
-//                .advisors(advisor->advisor.param(ChatMemory.CONVERSATION_ID,chatId))
-//                .advisors(new QuestionAnswerAdvisor(codeAppVectorStore))
-                .stream().content();
-//        String text = chatResponse.getResult().getOutput().getText();
-    }
-    record codeReport(String title, List<String> suggestions){}
-//     public codeReport doChatWithReport(String message, String chatId)
-//        {
-//            codeReport entity = chatClient.prompt().advisors(advisor->advisor.param(ChatMemory.CONVERSATION_ID,chatId))
-//                    .system(SYSTEM_PROMPT + "每次对话后都要生成恋爱结果，标题为{用户名}的恋爱报告，内容为建议列表")
-//                    .user(message)
-//              .call().entity(codeReport.class);
-//
-////            log.info(entity);
-//            return entity;
-//
-//        }
-
-
-//    public String doChatWithRag(String message,String chatId)
-//    {
-//        Map<String,Object> params = new HashMap<>();
-//        params.put("id",chatId);
-//        ChatResponse chatResponse = chatClient
-//                .prompt()
-//                .user(message)
-//                .advisors(new QuestionAnswerAdvisor(codeAppVectorStore)).toolContext(params)
-//
-//                .call().chatResponse();
-//        return chatResponse.getResult().getOutput().getText();
-//
-//    }
-//    @Resource
-//    private ToolCallback[] toolCallbacks;
-//    public String doChatWithToolCalling(String message,String chatId)
-//    {
-//        Map<String,Object> params = new HashMap<>();
-//        params.put("id",chatId);
-//        ChatResponse chatResponse = chatClient
-//                .prompt()
-//                .user(message)
-//                .advisors(spec -> spec.param(CHAT_MEMORY_CONVERSATION_ID_KEY, chatId)
-//                .param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, AiCientConstans.SHORT_MEMORY_LENGTH)
-//                        .advisors(new MySimpleLoggerAdvisor())).tools(toolCallbacks)
-//
-//
-//
-//                .call().chatResponse();
-//        return chatResponse.getResult().getOutput().getText();
-//
-//    }
 
     public String doChatWithMcp(String message,String chatId)
     {

@@ -119,7 +119,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
         if(conversation==null){
             return Collections.emptyList();
         }
-        String userId = conversation.getUser_id();
+        String userId = conversation.getUserId();
         UserSetting userSetting = userSettingService.getById(userId);//只获取不创建
         if(userSetting!=null){
             lastN=userSetting.getContextWindow();

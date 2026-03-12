@@ -21,7 +21,6 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.content.Media;
 import org.springframework.util.MimeTypeUtils;
 import org.springframework.util.StreamUtils;
-import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
 
@@ -29,6 +28,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 import java.util.function.Consumer;
 
 @Data
@@ -40,17 +41,18 @@ public abstract class BaseAgent {
     private AgentState agentState=AgentState.IDLE;
     private int currentStep=0;
     private volatile Disposable currentDisposable;
-    private volatile Boolean cancelled;
+    private volatile Boolean cancelled = false;
     private AiAttachmentService attachmentService;
     private AttachmentReaderUtil attachmentReaderUtil;
     private int maxStep=16;
-    private String SystemSuffix;
+    private String systemSuffix;
     private String userId;
     private ChatClient chatClient;
     private String sessionId;
-    private List<Media>mediaList;
+    private List<Media>mediaList = new ArrayList<>();
     private  AgentSessionRegistry agentSessionRegistry;
     private SseEmitter emitter;
+    private Executor agentExecutor = ForkJoinPool.commonPool();
     private Consumer<List<AgentEvent>> onStepFinished;//步骤完成回调
     private  AgentMessageService agentMessageService;
     private  AgentSessionService agentSessionService;
@@ -78,10 +80,18 @@ public abstract class BaseAgent {
     public abstract String step();
     protected void cleanup(){
          agentState = AgentState.IDLE;
+         currentStep = 0;
+         currentDisposable = null;
+         cancelled = false;
+         systemSuffix = null;
+         userId = null;
+         sessionId = null;
+         emitter = null;
+         mediaList.clear();
+         messageList.clear();
     }
      public SseEmitter runStream(String userPrompt,String sessionId,List<Long>attachments,String userId) {
-        this.sessionId = sessionId;
-        this.userId=userId;
+        initializeRunState(sessionId, userId);
         emitter = new SseEmitter(1000 * 60 * 8L);
         agentSessionRegistry.register(sessionId, this);
         emitter.onCompletion(() -> agentSessionRegistry.remove(sessionId));
@@ -92,17 +102,16 @@ public abstract class BaseAgent {
         CompletableFuture.runAsync(() -> {
             try {
                 this.agentState = AgentState.RUNNING;
-                messageList.add(new UserMessage(userPrompt));
-                  if (attachments != null && !attachments.isEmpty()) {
-                      emit(AgentEvent.attachmentLoading()); // 通知前端"正在读取附件"
-                      String attachmentContent = loadAttachments(attachments, userPrompt);
-                      if (!attachmentContent.isEmpty()) {
-                          this.setSystemSuffix(attachmentContent);
-                      }
-                      emit(AgentEvent.attachmentLoaded()); // 通知前端"附件读取完成"
-                  }
-                  this.setSystemPrompt(systemPrompt+(SystemSuffix!=null?"":SystemSuffix));
-                  this.getMessageList().add(new SystemMessage(this.getSystemPrompt()));
+                if (attachments != null && !attachments.isEmpty()) {
+                    emit(AgentEvent.attachmentLoading()); // 通知前端"正在读取附件"
+                    String attachmentContent = loadAttachments(attachments, userPrompt);
+                    if (!attachmentContent.isEmpty()) {
+                        this.systemSuffix = attachmentContent;
+                    }
+                    emit(AgentEvent.attachmentLoaded()); // 通知前端"附件读取完成"
+                }
+                this.getMessageList().add(new SystemMessage(buildRuntimeSystemPrompt()));
+                this.getMessageList().add(new UserMessage(userPrompt));
                 for (int i = 0; i < maxStep && agentState != AgentState.FINISHED; i++) {
                     currentStep = i + 1;
                     emit(AgentEvent.stepStart(currentStep));//发送步骤第几
@@ -123,8 +132,21 @@ public abstract class BaseAgent {
             } finally {
                 cleanup();
             }
-        });
+        }, agentExecutor);
         return emitter;
+    }
+    private void initializeRunState(String sessionId, String userId) {
+        this.sessionId = sessionId;
+        this.userId = userId;
+        this.currentStep = 0;
+        this.currentDisposable = null;
+        this.cancelled = false;
+        this.systemSuffix = null;
+        this.mediaList = new ArrayList<>();
+        this.messageList = new ArrayList<>();
+    }
+    private String buildRuntimeSystemPrompt() {
+        return systemPrompt + (systemSuffix == null ? "" : systemSuffix);
     }
     private String loadAttachments(List<Long> attachmentIds, String userPrompt) {
         StringBuilder attachmentContent = new StringBuilder();
@@ -167,6 +189,8 @@ public abstract class BaseAgent {
             throw new RuntimeException("UserPrompt can't be empty ");
         }
         this.agentState=AgentState.RUNNING;
+        messageList = new ArrayList<>();
+        messageList.add(new SystemMessage(buildRuntimeSystemPrompt()));
         messageList.add(new UserMessage(userPrompt));
         List<String>resultList=new ArrayList<>();
         try {

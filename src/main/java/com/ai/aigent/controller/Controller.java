@@ -60,7 +60,7 @@ public class Controller {
             return Result.error("请先登录");
         }
         List<Conversation> list = conversationService.list(new LambdaQueryWrapper<Conversation>()
-                .eq(Conversation::getUser_id, userId));
+                .eq(Conversation::getUserId, userId));
         Collections.reverse(list);
         return Result.success(list);
     }
@@ -89,7 +89,8 @@ public class Controller {
                 .eq(ChatMessage::getConversationId, ChatId));
         List<ChatMessageVO>listVO =
                 list.stream().map(l->
-                {ChatMessageVO chat=new ChatMessageVO(); BeanUtil.copyProperties(l,chat);
+                {ChatMessageVO chat=new ChatMessageVO();
+                    BeanUtil.copyProperties(l,chat);
                     chat.setPayload(chatMessageService.deserialize(l).getText());
                     return chat;
                 }).collect(Collectors.toList());
@@ -209,6 +210,26 @@ public class Controller {
         conversationService.updateById(conversation);
         return Result.success("修改成功");
     }
+    @PostMapping("/chat/message/favor")
+    public Result<?> favorChatMessage(@RequestParam Long messageId,
+                                      @RequestParam Boolean isFavor,
+                                      HttpServletRequest request) {
+        String userId = usersService.getLoginUser(request);
+        ChatMessage chatMessage = chatMessageService.getById(messageId);
+        if (chatMessage == null) {
+            return Result.error("消息不存在");
+        }
+        Conversation conversation = conversationService.getById(chatMessage.getConversationId());
+        if (conversation == null) {
+            return Result.error("会话不存在");
+        }
+        if (!userId.equals(conversation.getUserId())) {
+            return Result.error("无权操作");
+        }
+        chatMessage.setIsFavor(isFavor);
+        chatMessageService.updateById(chatMessage);
+        return Result.success();
+    }
     @GetMapping("/search/message")
     public Result<List<Conversation>> searchMessage(String ChatId, String keyword)
     {
@@ -226,34 +247,44 @@ public class Controller {
         }
         String userId = usersService.getLoginUser(request);
         Long total_token = userUsageDailyService.getUsage(request);
-
         Map<String,Object>map=new HashMap<>();
         map.put("total",userUsageDailyService.count(new LambdaQueryWrapper<UserUsageDaily>()
                 .eq(UserUsageDaily::getUserId,userId)));//调用总数
         map.put("total_token",total_token);//总计消耗token
-
         QueryWrapper<UserUsageDaily> wrapper = new QueryWrapper<>();
         wrapper.eq("user_id", userId)
                .ge("time", LocalDate.now().atStartOfDay())
                .lt("time", LocalDate.now().plusDays(1).atStartOfDay())
                .select("SUM(token) as total");
         List<Map<String, Object>> maps = userUsageDailyService.getBaseMapper().selectMaps(wrapper);
-
         Long total = maps.isEmpty() ? 0 : ((Number) maps.get(0).get("total")).longValue();
-        map.put("today_token_quota",userUsageDailyService.getDailyLimit(userId,type));
-        map.put("today_token",total);
+        map.put("today_token_quota",userUsageDailyService.getDailyLimit(userId,type));//每日token限额
+        map.put("today_token",total);//今天消耗token
        LocalDate today = LocalDate.now();
-
         Long todayCount = userUsageDailyService.count(
             new LambdaQueryWrapper<UserUsageDaily>()
                 .eq(UserUsageDaily::getUserId, userId)
                 .ge(UserUsageDaily::getTime, today.atStartOfDay())          // >= 今天 00:00:00
                 .lt(UserUsageDaily::getTime, today.plusDays(1).atStartOfDay()) // < 明天 00:00:00
         );
-
-
         map.put("today_calls", todayCount);
         return Result.success(map);
+    }
+    @GetMapping("/stat/top/model")
+    public List<Map<String, Object>> statTopModels(HttpServletRequest request) {
+        String userId = usersService.getLoginUser(request);
+        return userUsageDailyService.getBaseMapper().selectMaps(
+                new QueryWrapper<UserUsageDaily>()
+                        .select(
+                                "chat_model AS model",
+                                "COUNT(*) AS calls",
+                                "SUM(token) AS totalTokens"
+                        )
+                        .eq("user_id", userId)
+                        .groupBy("chat_model")
+                        .orderByDesc("calls")
+                        .last("LIMIT 10")
+        );
     }
     @GetMapping("/stat/hour")
     public Result<List<Map<String,Object>>> statByHour(

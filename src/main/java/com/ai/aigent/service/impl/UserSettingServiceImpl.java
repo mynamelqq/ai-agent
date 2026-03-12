@@ -49,12 +49,12 @@ public class UserSettingServiceImpl extends ServiceImpl<UserSettingMapper, UserS
     }
 
     @Override
-    public UserSetting getByUserId(String userId) {
-        return createDefaultSetting(userId);
+    public UserSetting getByUserId(String userId,String type) {
+        return createDefaultSetting(userId,type);
     }
 
     @Override
-    public UserSetting createDefaultSetting(String userId) {
+    public UserSetting createDefaultSetting(String userId,String type) {
        UserSetting userSetting = new UserSetting();
         UserSetting byId = getById(userId);
         if(byId!=null){
@@ -68,7 +68,13 @@ public class UserSettingServiceImpl extends ServiceImpl<UserSettingMapper, UserS
         userSetting.setTopk(50);
         userSetting.setColorPoint("blue");
         userSetting.setChatMemory(true);
-        userSetting.setMaxTokens(10000);//1万tokens限制
+        if(type=="user"){
+            userSetting.setMaxTokens(100000);//10万tokens限制
+        }
+        else{
+            userSetting.setMaxTokens(100000);//10万tokens限制
+        }
+
         userSetting.setFrequencyPenalty(0.0);
         userSetting.setToolMode("auto");
         userSetting.setUseMcp(false);

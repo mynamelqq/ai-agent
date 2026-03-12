@@ -127,7 +127,7 @@ public class AiController {
         conversation.setUpdatedAt(LocalDateTime.now());
         conversation.setId(ChatId);
         conversation.setPinned(false);
-        conversation.setUser_id(userId);
+        conversation.setUserId(userId);
         conversationService.save(conversation);
         String title= codeApp.genTitle(message);
         conversation.setTitle(title);

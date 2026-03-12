@@ -1,12 +1,16 @@
 package com.ai.aigent.agent;
 
 import cn.hutool.core.collection.CollectionUtil;
-import com.ai.aigent.agent.model.*;
-import com.ai.aigent.service.UserUsageDailyService;
+import com.ai.aigent.agent.model.AgentEvent;
+import com.ai.aigent.agent.model.AgentMessageEnum;
+import com.ai.aigent.agent.model.AgentMessagePayload;
+import com.ai.aigent.agent.model.AgentState;
+import com.ai.aigent.agent.model.ToolResultMessage;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
@@ -15,16 +19,17 @@ import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.SignalType;
-import reactor.core.scheduler.Schedulers;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -33,258 +38,314 @@ import java.util.stream.Collectors;
 @Data
 @Slf4j
 @EqualsAndHashCode(callSuper = true)
-public  class ToolCallAgent extends ReActAgent{
+public class ToolCallAgent extends ReActAgent {
     private final List<ToolCallback> availableTools;
-    private List<AssistantMessage.ToolCall>toolCalls=null;
+    private List<AssistantMessage.ToolCall> toolCalls;
     private ChatResponse toolCallChatResponse;
     private final ToolCallingManager toolCallingManager;
     private final ChatOptions chatOptions;
-    private UserUsageDailyService dailyService;
-    private List<ToolCallback>toolCallbackList;
-    public ToolCallAgent(List<ToolCallback> availableTools, UserUsageDailyService dailyService,
-                         ToolCallbackProvider toolCallbackProvider)
-    {
+    private final ToolCallbackProvider toolCallbackProvider;
+
+    public ToolCallAgent(List<ToolCallback> availableTools, ToolCallbackProvider toolCallbackProvider,
+                         ToolCallingManager toolCallingManager, ChatOptions chatOptions) {
         super();
-        this.availableTools=availableTools;
-//        this.availableTools.addAll(Arrays.stream(toolCallbackProvider.getToolCallbacks()).toList());
-        this.dailyService=dailyService;
-        this.toolCallingManager=ToolCallingManager.builder().build();
-        this.chatOptions= ToolCallingChatOptions.builder().temperature(0.6).model("qwq-plus").internalToolExecutionEnabled(false).build();
+        this.availableTools = List.copyOf(availableTools);
+        this.toolCallbackProvider = toolCallbackProvider;
+        this.toolCallingManager = toolCallingManager;
+        this.chatOptions = chatOptions;
     }
-     private void saveAndRecord(String userId, String type,
-                AtomicReference<Integer> token, AtomicReference<Integer> prompt_tokens,
-                AtomicReference<Integer> completion_tokens, AtomicReference<Integer> cached_tokens,String model) {
-            dailyService.addTotalUsage(userId, type, token.get());
-            dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),
-                                  completion_tokens.get(), cached_tokens.get(),"agent","qwq-plus");//todo model
-        }
+
     @Override
     public boolean think() {
-        if (StringUtils.isNotBlank(this.getNextStepPrompt())) {
-            getMessageList().add(new UserMessage(getNextStepPrompt()));//挑选工具提示词
+        if (StringUtils.isNotBlank(this.getNextStepPrompt()) && getMessageList().size() <= 2) {
+            getMessageList().add(new UserMessage(getNextStepPrompt()));
         }
+
         StringBuilder reasoningBuf = new StringBuilder();
-        toolCalls=null;
-        toolCallChatResponse=null;
         StringBuilder textBuf = new StringBuilder();
+        toolCalls = null;
+        toolCallChatResponse = null;
+
         try {
-            AtomicReference<ChatResponse> lastResponse = new AtomicReference<>();
+            Map<String, Object> toolContext = new HashMap<>();
+            toolContext.put("chatId", getSessionId());
+            toolContext.put("userId", getUserId());
+
             AtomicReference<Usage> finalUsage = new AtomicReference<>();
-            AtomicReference<Integer> token = new AtomicReference<>(0);
-             Map<String, Object> toolContext = Map.of("chatId", getSessionId(),"userId",getUserId());
-             AtomicReference<Boolean>isThinking = new AtomicReference<>(false);
-            AtomicReference<Long>thinkingStartTime=new AtomicReference<>(System.currentTimeMillis());
-            AtomicReference<Long>thinkingEndTime=new AtomicReference<>(System.currentTimeMillis());
-            AtomicReference<Integer> prompt_tokens = new AtomicReference<>(0);
-            AtomicReference<Integer> completion_tokens = new AtomicReference<>(0);
-            AtomicReference<Integer> cached_tokens = new AtomicReference<>(0);
+            AtomicReference<Throwable> streamError = new AtomicReference<>();
+            AtomicReference<Boolean> isThinking = new AtomicReference<>(false);
+            AtomicReference<Long> thinkingStartTime = new AtomicReference<>(System.currentTimeMillis());
+            AtomicReference<Long> thinkingEndTime = new AtomicReference<>(System.currentTimeMillis());
             AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
             AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
+
             Flux<ChatResponse> responseFlux = getChatClient()
-                .prompt(new Prompt(buildPrompt(getMessageList()), chatOptions))
-                .toolCallbacks(availableTools)
+                    .prompt(new Prompt(buildPrompt(getMessageList()), chatOptions))
+                    .toolCallbacks(availableTools)
+                    .advisors(new SimpleLoggerAdvisor())
+                    .toolCallbacks(toolCallbackProvider)
                     .toolContext(toolContext)
-                .stream()
-                .chatResponse();
+                    .stream()
+                    .chatResponse();
+
             CountDownLatch latch = new CountDownLatch(1);
             setCurrentDisposable(responseFlux
-                .doOnNext(chatResponse -> {
-                    if(chatResponse==null)return;
-                    Usage usage = chatResponse.getMetadata().getUsage();
-                    if (usage != null && usage.getTotalTokens() != null) {
-                        finalUsage.set(usage);
-                    }
-                    if (getCancelled()) {
-                        getCurrentDisposable().dispose();
-                        return;
-                    }
-                    var output = chatResponse.getResult().getOutput();
-                    var result = chatResponse.getResult();
-                    var msg = result.getOutput();
-                    Optional.of(msg.getMetadata())
-                            .map(meta -> meta.get("reasoningContent"))
-                            .map(Object::toString)
-                            .ifPresent((reasoning)->{
-                                if(reasoning.isEmpty())return;
-                                reasoningBuf.append(reasoning);
-                                emit(AgentEvent.reasoning(reasoning));
-                                if(!isThinking.get()){
-                                    isThinking.set(true);
-                                    thinkingStartTime.set(System.currentTimeMillis());
-                                }
-                            });
-                    String text = output.getText();
-                    if (text != null && !text.isEmpty()) {
-                        if(isThinking.get()){
-                            isThinking.set(false);
+                    .doOnNext(chatResponse -> {
+                        if (chatResponse == null) {
+                            return;
+                        }
+
+                        Usage usage = chatResponse.getMetadata().getUsage();
+                        if (usage != null && usage.getTotalTokens() != null) {
+                            finalUsage.set(usage);
+                        }
+
+                        if (Boolean.TRUE.equals(getCancelled())) {
+                            if (getCurrentDisposable() != null) {
+                                getCurrentDisposable().dispose();
+                            }
+                            return;
+                        }
+
+                        var output = chatResponse.getResult().getOutput();
+                        Optional.ofNullable(output.getMetadata())
+                                .map(meta -> meta.get("reasoningContent"))
+                                .map(Object::toString)
+                                .filter(StringUtils::isNotBlank)
+                                .ifPresent(reasoning -> {
+                                    reasoningBuf.append(reasoning);
+                                    emit(AgentEvent.reasoning(reasoning));
+                                    if (!isThinking.get()) {
+                                        isThinking.set(true);
+                                        thinkingStartTime.set(System.currentTimeMillis());
+                                    }
+                                });
+
+                        String text = output.getText();
+                        if (StringUtils.isNotBlank(text)) {
+                            if (isThinking.get()) {
+                                isThinking.set(false);
+                                thinkingEndTime.set(System.currentTimeMillis());
+                            }
+                            textBuf.append(text);
+                            emit(AgentEvent.text(text));
+                        }
+
+                        if (!output.getToolCalls().isEmpty()) {
+                            this.toolCalls = output.getToolCalls();
+                            this.toolCallChatResponse = chatResponse;
+                        }
+                    })
+                    .doOnComplete(() -> {
+                        endTime.set(System.currentTimeMillis());
+                        if (isThinking.get()) {
                             thinkingEndTime.set(System.currentTimeMillis());
                         }
-                        textBuf.append(text);
-                        emit(AgentEvent.text(text));
-                    }
-                    if(!output.getToolCalls().isEmpty()){
-                        this.toolCalls = output.getToolCalls();
-                        toolCallChatResponse=chatResponse;
-                    }
-                })
-                .doOnComplete(() -> {
-                    endTime.set(System.currentTimeMillis());
-                    if(isThinking.get())thinkingEndTime.set(System.currentTimeMillis());
-                    Usage usage = finalUsage.get();
-                    if (usage == null) return;
-                    if (usage.getPromptTokens() != null) prompt_tokens.set(usage.getPromptTokens());
-                    if (usage.getCompletionTokens() != null) completion_tokens.set(usage.getCompletionTokens());
-                    if (usage.getTotalTokens() != null) token.set(usage.getTotalTokens());
-                    if (usage.getNativeUsage() instanceof Map) {
-                        Map<String, Object> map = (Map<String, Object>) usage.getNativeUsage();
-                        Object promptTokensDetails = map.get("prompt_tokens_details");
-                        if (promptTokensDetails instanceof Map) {
-                            Map<String, Object> detailsMap = (Map<String, Object>) promptTokensDetails;
-                            cached_tokens.set(Integer.parseInt(detailsMap.get("cached_tokens").toString()));
+                    })
+                    .doOnError(error -> {
+                        endTime.set(System.currentTimeMillis());
+                        if (isThinking.get()) {
+                            thinkingEndTime.set(System.currentTimeMillis());
                         }
-                    }
-                })
-                .doFinally(signal -> {
-                    if (signal == SignalType.ON_COMPLETE) {
-                        // 正常完成：保存完整内容
-                        AgentMessagePayload agentMessagePayload=new AgentMessagePayload();
-                        agentMessagePayload.setContent(textBuf.toString());
-                        agentMessagePayload.setReasoning(reasoningBuf.toString());
-                        getAgentMessageService().saveAgentMessage(getSessionId(), AgentMessageEnum.ASSISTANT.getValue(),
-                                agentMessagePayload,token.get(),
-                                (thinkingEndTime.get()-thinkingStartTime.get()),(endTime.get()-startTime.get()),prompt_tokens.get(), completion_tokens.get(),cached_tokens.get());
-                    } else if (signal == SignalType.CANCEL) {
-                        if (getCancelled()) {
-                            // 主动取消：保存已有内容
-                            if (!textBuf.isEmpty()) {
-                                endTime.set(System.currentTimeMillis());
-                                Usage usage = finalUsage.get();
-                                if (usage == null) return;
-                                if (usage.getPromptTokens() != null) prompt_tokens.set(usage.getPromptTokens());
-                                if (usage.getCompletionTokens() != null) completion_tokens.set(usage.getCompletionTokens());
-                                if (usage.getTotalTokens() != null) token.set(usage.getTotalTokens());
-                                if (usage.getNativeUsage() instanceof Map) {
-                                    Map<String, Object> map = (Map<String, Object>) usage.getNativeUsage();
-                                    Object promptTokensDetails = map.get("prompt_tokens_details");
-                                    if (promptTokensDetails instanceof Map) {
-                                        Map<String, Object> detailsMap = (Map<String, Object>) promptTokensDetails;
-                                        cached_tokens.set(Integer.parseInt(detailsMap.get("cached_tokens").toString()));
-                                    }
-                                }
-                                AgentMessagePayload agentMessagePayload=new AgentMessagePayload();
-                                agentMessagePayload.setContent(textBuf.toString());
-                                agentMessagePayload.setReasoning(reasoningBuf.toString());
-                                getAgentMessageService().saveAgentMessage(getSessionId(), AgentMessageEnum.ASSISTANT.getValue(),
-                                agentMessagePayload,token.get(),
-                                        (thinkingEndTime.get()-thinkingStartTime.get()),(endTime.get()-startTime.get()),prompt_tokens.get(),completion_tokens.get(),cached_tokens.get());
-                            }
-                        }
-                    }
-                    latch.countDown(); // 释放等待
-                })
-                .subscribeOn(Schedulers.boundedElastic())
-                .subscribe());
-        // 等待完成（替代 block()），设置超时防止永久阻塞
-        try {
-            latch.await(5, TimeUnit.MINUTES);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("Agent 等待被中断");
-        }
-        if(toolCalls==null||toolCalls.isEmpty()){
-            return false;
-        }
-        toolCalls.forEach(tc ->
-                    {
-                        AgentMessagePayload callPayload = new AgentMessagePayload();
-                        callPayload.setToolCallId(tc.id());       // 唯一ID
-                        callPayload.setToolName(tc.name());
-                        callPayload.setToolArgs(tc.arguments());  // JSON字符串
-                        getAgentMessageService().saveAgentMessage(
-                        getSessionId(), AgentMessageEnum.TOOL.getValue(), callPayload, 0,0L,0L,0,0,0);
-                        emit(AgentEvent.toolCall(tc.name(), tc.arguments()));
-                    });
+                        streamError.set(error);
+                    })
+                    .doFinally(signal -> {
+                        persistAssistantTurn(signal, textBuf, reasoningBuf, finalUsage.get(),
+                                thinkingStartTime.get(), thinkingEndTime.get(), startTime.get(), endTime.get());
+                        latch.countDown();
+                    })
+                    .subscribe());
+
+            try {
+                latch.await(5, TimeUnit.MINUTES);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Agent 等待被中断");
+            }
+
+            Throwable error = streamError.get();
+            if (error != null && !Boolean.TRUE.equals(getCancelled())) {
+                throw new RuntimeException(error);
+            }
+
+            if (toolCalls == null || toolCalls.isEmpty()) {
+                return false;
+            }
+
+            toolCalls.forEach(tc -> {
+                AgentMessagePayload callPayload = new AgentMessagePayload();
+                if (isMcpTool(tc.name())) {
+                    emit(AgentEvent.mcpToolCall(tc.name(), tc.arguments()));
+                } else {
+                    emit(AgentEvent.toolCall(tc.name(), tc.arguments()));
+                }
+                callPayload.setToolCallId(tc.id());
+                callPayload.setToolName(tc.name());
+                callPayload.setToolArgs(tc.arguments());
+                getAgentMessageService().saveAgentMessage(
+                        getSessionId(), AgentMessageEnum.TOOL.getValue(), callPayload, 0, 0L, 0L, 0, 0, 0);
+            });
             log.info("{} 选择了 {} 个工具", getName(), toolCalls.size());
             return true;
-
         } catch (Exception e) {
-            log.error("{} think 异常：{}", getName(), e.getMessage());
+            log.error("{} think 异常：{}", getName(), e.getMessage(), e);
             getMessageList().add(new AssistantMessage("处理时遇到问题：" + e.getMessage()));
             return false;
         }
     }
 
     @Override
-    public String act() {//工具调用没有ai
-        if (toolCalls.isEmpty()) return "不需要调用工具";
-        long startTime=System.currentTimeMillis();
-        Prompt prompt = new Prompt(getMessageList(), chatOptions);
+    public String act() {
+        if (toolCalls == null || toolCalls.isEmpty()) {
+            return "不需要调用工具";
+        }
 
+        long startTime = System.currentTimeMillis();
+        Prompt prompt = new Prompt(getMessageList(), chatOptions);
         ToolExecutionResult result = toolCallingManager.executeToolCalls(prompt, toolCallChatResponse);
-        ToolResponseMessage toolResponseMessage = (ToolResponseMessage)
-                CollectionUtil.getLast(result.conversationHistory());
-        // 推送工具结果给前端
+        ToolResponseMessage toolResponseMessage = (ToolResponseMessage) CollectionUtil.getLast(result.conversationHistory());
+
         toolResponseMessage.getResponses().forEach(r -> {
-            getMessageList().add(new ToolResultMessage(r.responseData(),new HashMap<>(), r.name()) );
+            if (isMcpTool(r.name())) {
+                emit(AgentEvent.mcpToolResult(r.name(), r.responseData(), new HashMap<>()));
+            } else {
+                emit(AgentEvent.toolResult(r.name(), r.responseData(), new HashMap<>()));
+            }
+
+            getMessageList().add(new ToolResultMessage(r.responseData(), new HashMap<>(), r.name()));
+
             AgentMessagePayload resultPayload = new AgentMessagePayload();
-            resultPayload.setToolCallId(r.id());      // 对应的调用ID
+            resultPayload.setToolCallId(r.id());
             resultPayload.setToolName(r.name());
             resultPayload.setToolResult(r.responseData());
             getAgentMessageService().saveAgentMessage(
-            getSessionId(), AgentMessageEnum.TOOL_RESULT.getValue(),
-                    resultPayload, 0,0L,(System.currentTimeMillis()-startTime),0,0,0);
-            Map<String,Object>meta=new HashMap<>();
-            meta.put("cost",(System.currentTimeMillis()-startTime));
-            emit(AgentEvent.toolResult(r.name(), r.responseData(), meta));
+                    getSessionId(), AgentMessageEnum.TOOL_RESULT.getValue(),
+                    resultPayload, 0, 0L, System.currentTimeMillis() - startTime, 0, 0, 0);
         });
-        // 检查终止工具
+
         boolean isTerminated = toolResponseMessage.getResponses().stream()
                 .anyMatch(t -> t.name().equals("doTerminateTool"));
-        if (isTerminated) setAgentState(AgentState.FINISHED);
+        if (isTerminated) {
+            setAgentState(AgentState.FINISHED);
+        }
+
         String collect = toolResponseMessage.getResponses().stream()
                 .map(r -> "工具 " + r.name() + " 返回：" + r.responseData())
                 .collect(Collectors.joining("\n"));
         log.info(collect);
         return collect;
     }
+
     public static String buildPrompt(List<Message> messageList) {
         StringBuilder sb = new StringBuilder();
 
-        for (Message m : messageList) {
-
-            // 1 普通消息
-            if (!(m instanceof ToolResponseMessage)) {
-                sb.append(m.getMessageType())
-                  .append(": ")
-                  .append(m.getText())
-                  .append("\n");
+        for (Message message : messageList) {
+            if (message instanceof ToolResultMessage toolMsg) {
+                String content = truncate(toolMsg.getToolResult(), 6000);
+                sb.append("### SYSTEM_INTERNAL_DATA_START ###\n")
+                        .append("\nTool: ").append(toolMsg.getToolName()).append("\nOutput:\n")
+                        .append(content).append("\n")
+                        .append("\n### SYSTEM_INTERNAL_DATA_END ###\n");
                 continue;
             }
-            if (m instanceof ToolResultMessage toolMsg) {
-                String toolName = toolMsg.getToolName();
-                String content = truncate(toolMsg.getToolResult(), 60000);
-                sb.append("[TOOL RESULT]")
-                  .append("\nTool: ").append(toolName)
-                  .append("\nOutput:\n")
-                  .append(content)
-                  .append("\n")
-                  .append("[END TOOL RESULT]")
-                  .append("\n");
+
+            if (!(message instanceof ToolResponseMessage) && StringUtils.isNotBlank(message.getText())) {
+                sb.append(message.getMessageType())
+                        .append(": ")
+                        .append(message.getText())
+                        .append("\n");
             }
         }
 
         return sb.toString();
     }
+
+    static String buildAssistantMemory(String text, String reasoning) {
+        if (StringUtils.isNotBlank(text)) {
+            return text;
+        }
+        return "";
+    }
+
+    private void persistAssistantTurn(SignalType signal, StringBuilder textBuf, StringBuilder reasoningBuf,
+                                      Usage usage, long thinkingStart, long thinkingEnd, long startTime, long endTime) {
+        boolean completed = signal == SignalType.ON_COMPLETE;
+        boolean cancelledWithOutput = signal == SignalType.CANCEL
+                && Boolean.TRUE.equals(getCancelled())
+                && (textBuf.length() > 0 || reasoningBuf.length() > 0);
+        if (!completed && !cancelledWithOutput) {
+            return;
+        }
+
+        UsageMetrics usageMetrics = UsageMetrics.from(usage);
+        AgentMessagePayload agentMessagePayload = new AgentMessagePayload();
+        agentMessagePayload.setContent(textBuf.toString());
+        agentMessagePayload.setReasoning(reasoningBuf.toString());
+
+        String memoryText = buildAssistantMemory(textBuf.toString(), reasoningBuf.toString());
+        if (StringUtils.isNotBlank(memoryText)) {
+            getMessageList().add(new AssistantMessage(memoryText));
+        }
+
+        getAgentMessageService().saveAgentMessage(
+                getSessionId(),
+                AgentMessageEnum.ASSISTANT.getValue(),
+                agentMessagePayload,
+                usageMetrics.totalTokens(),
+                thinkingEnd - thinkingStart,
+                endTime - startTime,
+                usageMetrics.promptTokens(),
+                usageMetrics.completionTokens(),
+                usageMetrics.cachedTokens());
+    }
+
+    private static boolean isMcpTool(String toolName) {
+        return toolName != null && toolName.startsWith("maps");
+    }
+
     private static String truncate(String text, int maxLen) {
         if (text == null) {
             return "";
         }
-
         if (text.length() <= maxLen) {
             return text;
         }
-
         return text.substring(0, maxLen)
-            + "\n...[TRUNCATED " + (text.length() - maxLen) + " chars]";
+                + "\n...[TRUNCATED " + (text.length() - maxLen) + " chars]";
+    }
+
+    private static String truncateReasoning(String reasoning, int maxLength) {
+        if (reasoning == null || reasoning.length() <= maxLength) {
+            return reasoning;
+        }
+        int halfLen = maxLength / 2;
+        String head = reasoning.substring(0, halfLen);
+        String tail = reasoning.substring(reasoning.length() - halfLen);
+        return head + "\n...[reasoning truncated]...\n" + tail;
+    }
+
+    private record UsageMetrics(int totalTokens, int promptTokens, int completionTokens, int cachedTokens) {
+        private static UsageMetrics from(Usage usage) {
+            if (usage == null) {
+                return new UsageMetrics(0, 0, 0, 0);
+            }
+
+            int totalTokens = usage.getTotalTokens() == null ? 0 : usage.getTotalTokens();
+            int promptTokens = usage.getPromptTokens() == null ? 0 : usage.getPromptTokens();
+            int completionTokens = usage.getCompletionTokens() == null ? 0 : usage.getCompletionTokens();
+            int cachedTokens = 0;
+
+            if (usage.getNativeUsage() instanceof Map<?, ?> map) {
+                Object promptTokensDetails = map.get("prompt_tokens_details");
+                if (promptTokensDetails instanceof Map<?, ?> detailsMap) {
+                    Object cachedTokensValue = detailsMap.get("cached_tokens");
+                    if (cachedTokensValue != null) {
+                        cachedTokens = Integer.parseInt(cachedTokensValue.toString());
+                    }
+                }
+            }
+
+            return new UsageMetrics(totalTokens, promptTokens, completionTokens, cachedTokens);
+        }
     }
 }

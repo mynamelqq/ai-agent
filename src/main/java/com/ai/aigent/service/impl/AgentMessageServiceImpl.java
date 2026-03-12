@@ -17,7 +17,8 @@ import org.springframework.stereotype.Service;
 public class AgentMessageServiceImpl extends ServiceImpl<AgentMessageMapper, AgentMessage>
     implements AgentMessageService{
     public AgentMessage saveAgentMessage(String sessionId, String type, AgentMessagePayload payload,
-                                         Integer token,Long thinkingTime,Long cost, Integer promptTokens,  Integer completionTokens,Integer cachedTokens)
+                                         Integer token,Long thinkingTime,Long cost, Integer promptTokens,
+                                         Integer completionTokens,Integer cachedTokens)
     {
         AgentMessage msg = new AgentMessage();
         msg.setPayload(JSONUtil.toJsonStr(payload));

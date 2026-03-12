@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 @TableName(value ="users")
 @Data
 public class Users {
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
     private String username;
     @TableField(value = "password_hash")

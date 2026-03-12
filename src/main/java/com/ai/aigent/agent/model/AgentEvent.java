@@ -25,6 +25,13 @@ public class AgentEvent {
         meta.put("toolName", toolName);
         return new AgentEvent("tool_result", result, meta);
     }
+    public static AgentEvent mcpToolCall(String toolName, String args) {
+        return new AgentEvent("mcp_call", args, Map.of("toolName", toolName));
+    }
+    public static AgentEvent mcpToolResult(String toolName, String result,Map<String,Object>meta) {
+        meta.put("toolName", toolName);
+        return new AgentEvent("mcp_result", result, meta);
+    }
     public static AgentEvent stepStart(int step) {
         return new AgentEvent("step_start", "Step " + step, Map.of("step", step));
     }

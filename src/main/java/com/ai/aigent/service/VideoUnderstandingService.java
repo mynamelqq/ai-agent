@@ -2,6 +2,8 @@ package com.ai.aigent.service;
 
 import com.ai.aigent.entity.dto.VideoUnderstandReq;
 import com.ai.aigent.exception.BusinessException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -19,6 +21,7 @@ import java.util.Map;
 import java.util.Objects;
 
 @Service
+@Slf4j
 public class VideoUnderstandingService {
 
     private static final String DEFAULT_MODEL = "glm-4.6v";
@@ -28,7 +31,6 @@ public class VideoUnderstandingService {
 
     @Value("${spring.ai.zhipuai.api-key}")
     private String apiKey;
-
     @Value("${zhipu.base-url:https://open.bigmodel.cn/api/paas/v4}")
     private String baseUrl;
 
@@ -66,38 +68,56 @@ public class VideoUnderstandingService {
             );
             return extractAssistantText(Objects.requireNonNull(response.getBody(), "响应体为空"));
         } catch (HttpStatusCodeException e) {
+            log.error("视频理解请求失败: {}", e.getResponseBodyAsString());
             throw BusinessException.badRequest("视频理解请求失败: " + e.getResponseBodyAsString());
         } catch (Exception e) {
             throw BusinessException.internalError("视频理解服务异常: " + e.getMessage());
         }
     }
 
-    private Map<String, Object> buildRequestBody(String videoUrl, String model, String prompt, int maxTokens, double temperature) {
+   private Map<String, Object> buildRequestBody(
+            String videoUrl,
+            String model,
+            String prompt,
+            int maxTokens,
+            double temperature) {
+
         Map<String, Object> requestBody = new HashMap<>();
+
         requestBody.put("model", model);
         requestBody.put("stream", false);
         requestBody.put("max_tokens", maxTokens);
         requestBody.put("temperature", temperature);
 
+        // video
+        Map<String, Object> videoUrlObj = new HashMap<>();
+        videoUrlObj.put("url", videoUrl);
+
+        Map<String, Object> videoPart = new HashMap<>();
+        videoPart.put("type", "video_url");
+        videoPart.put("video_url", videoUrlObj);
+
+        // text
         Map<String, Object> textPart = new HashMap<>();
         textPart.put("type", "text");
         textPart.put("text", prompt);
 
-        Map<String, Object> videoPart = new HashMap<>();
-        videoPart.put("type", "video_url");
-        Map<String, String> videoUrlObj = new HashMap<>();
-        videoUrlObj.put("url", videoUrl);
-        videoPart.put("video_url", videoUrlObj);
-
+        // content
         List<Map<String, Object>> content = new ArrayList<>();
-        content.add(textPart);
         content.add(videoPart);
+        content.add(textPart);
 
         Map<String, Object> userMessage = new HashMap<>();
         userMessage.put("role", "user");
         userMessage.put("content", content);
 
         requestBody.put("messages", List.of(userMessage));
+
+        // thinking（可选但推荐）
+        Map<String, Object> thinking = new HashMap<>();
+        thinking.put("type", "disabled");
+        requestBody.put("thinking", thinking);
+
         return requestBody;
     }
 
