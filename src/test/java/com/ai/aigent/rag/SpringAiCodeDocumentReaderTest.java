@@ -6,7 +6,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import java.io.IOException;
 @SpringBootTest
-class CodeAppDocumentReaderTest {
+class SpringAiCodeDocumentReaderTest {
     @Resource
     private MarkDownDocumentReaderUtils codeAppDocumentReader;
     @Test

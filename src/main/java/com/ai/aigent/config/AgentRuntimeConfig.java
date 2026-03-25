@@ -46,7 +46,7 @@ public class AgentRuntimeConfig {
                 .enableThinking(true)
                 .temperature(0.6)
                 .parallelToolCalls(true)
-                .model("qwen3-coder-plus")
+                .model("qwen3-max")
                 .internalToolExecutionEnabled(false)
                 .build();
     }

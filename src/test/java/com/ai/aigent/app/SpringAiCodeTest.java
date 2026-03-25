@@ -8,9 +8,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import java.util.UUID;
 
 @SpringBootTest
-class CodeAppTest {
+class SpringAiCodeTest {
     @Resource
-    private CodeApp codeApp;
+    private SpringAiCode springAiCode;
     @Resource
     private ChatSummaryService chatSummaryService;
     @Test
@@ -66,7 +66,7 @@ class CodeAppTest {
     void testGenTitle()
     {
         String message="This model provider doesn't serve your region. Visit https://cursor.com/docs/account/regions for more information.";
-        System.out.println(codeApp.genTitle(message));
+        System.out.println(springAiCode.genTitle(message));
 
     }
 
@@ -74,7 +74,7 @@ class CodeAppTest {
     @Test
     void doChatWithMcp() {
         String id= UUID.randomUUID().toString();
-        String s = codeApp.doChatWithMcp("现在几点", id);
+        String s = springAiCode.doChatWithMcp("现在几点", id);
         System.out.println(s);
     }
 }

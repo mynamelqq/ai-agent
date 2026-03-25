@@ -25,7 +25,6 @@ import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qcloud.cos.model.COSObject;
-import io.swagger.v3.oas.models.security.SecurityScheme;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -33,15 +32,11 @@ import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.metadata.Usage;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.prompt.ChatOptions;
-import org.springframework.ai.chat.prompt.DefaultChatOptionsBuilder;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
@@ -52,7 +47,6 @@ import org.springframework.ai.zhipuai.api.ZhiPuAiApi;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.MimeTypeUtils;
@@ -67,17 +61,13 @@ import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Component
 @Slf4j
-public class CodeApp {
+public class SpringAiCode {
     static final String ANALYSIS_MARKER = "analysis";
     static final String ASSISTANT_ANALYSIS_MARKER = "assistantanalysis";
     static final String ASSISTANT_COMMENTARY_MARKER = "assistantcommentary";
@@ -136,8 +126,8 @@ public class CodeApp {
     private UsersService usersService;
     @Autowired
     private UserSettingService userSettingService;
-    public CodeApp(JdbcChatMemoryAdvisor chatMemory,
-                   SummaryMemoryAdvisor summaryMemoryAdvisor,VectorStoreMemoryAdvisor vectorStoreMemoryAdvisor,OpenAiChatModel openAiChatModel) {
+    public SpringAiCode(JdbcChatMemoryAdvisor chatMemory,
+                        SummaryMemoryAdvisor summaryMemoryAdvisor, VectorStoreMemoryAdvisor vectorStoreMemoryAdvisor, OpenAiChatModel openAiChatModel) {
         this.chatMemory=chatMemory;
         this.summaryMemoryAdvisor = summaryMemoryAdvisor;
         this.vectorStoreMemoryAdvisor=vectorStoreMemoryAdvisor;
@@ -668,7 +658,7 @@ public class CodeApp {
                 thinkingTime);
     }
      @Transactional
-    public Flux<ChatResult> doChatStreamRegenerate(RegenDTO regenDTO, String userId,String type) {
+    public Flux<ChatResult> chatAiStreamRegenerate(RegenDTO regenDTO, String userId, String type) {
         String userMessageId = regenDTO.getUserMessageId();
         ChatMessage chatMessage = chatMessageService.getById(userMessageId);
         UserMessage userMessage = KryoUtils.deserialize(chatMessage.getPayload());

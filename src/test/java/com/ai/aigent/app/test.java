@@ -7,7 +7,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest
 public class test {
     @Resource
-    private CodeApp codeApp;
+    private SpringAiCode springAiCode;
     @Test
     void contextLoad()
     {

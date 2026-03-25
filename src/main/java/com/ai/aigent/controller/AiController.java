@@ -1,7 +1,7 @@
 package com.ai.aigent.controller;
 
 import com.ai.aigent.app.CancelTokenRegistry;
-import com.ai.aigent.app.CodeApp;
+import com.ai.aigent.app.SpringAiCode;
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.VO.ChatResult;
 import com.ai.aigent.entity.domin.AnonymousUser;
@@ -19,7 +19,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
@@ -35,7 +34,7 @@ import java.util.Map;
 @RequestMapping("/ai")
 public class AiController {
     @Resource
-    private CodeApp codeApp;
+    private SpringAiCode springAiCode;
     @Resource
     @Qualifier("dashScopeChatModel")
     private ChatModel dashscopeChatModel;
@@ -81,13 +80,13 @@ public class AiController {
             type = "anon";
         }
         dailyService.checkAndConsume(uid,type);
-        return codeApp.doChatStream(chatSendReq, uid, type);
+        return springAiCode.doChatStream(chatSendReq, uid, type);
     }
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ChatResponse> doChatWithNothing(@RequestBody ChatSendReq chatSendReq)
     {
-        return codeApp.doChatStreamBlank(chatSendReq);
+        return springAiCode.doChatStreamBlank(chatSendReq);
     }
     @PostMapping(value = "/chat/regenerate",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ChatResult> regenerate(@RequestBody RegenDTO regenDTO, HttpServletRequest request)
@@ -110,7 +109,7 @@ public class AiController {
             type = "anon";
         }
         dailyService.checkAndConsume(uid,type);
-        return codeApp.doChatStreamRegenerate(regenDTO, uid,type);
+        return springAiCode.chatAiStreamRegenerate(regenDTO, uid,type);
     }
     @Autowired
     private AiAttachmentService attachmentService;
@@ -129,7 +128,7 @@ public class AiController {
         conversation.setPinned(false);
         conversation.setUserId(userId);
         conversationService.save(conversation);
-        String title= codeApp.genTitle(message);
+        String title= springAiCode.genTitle(message);
         conversation.setTitle(title);
         conversationService.updateById(conversation);
         return Result.success(Map.of("title",title));

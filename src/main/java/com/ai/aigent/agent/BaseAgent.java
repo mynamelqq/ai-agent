@@ -90,7 +90,7 @@ public abstract class BaseAgent {
          mediaList.clear();
          messageList.clear();
     }
-     public SseEmitter runStream(String userPrompt,String sessionId,List<Long>attachments,String userId) {
+     public SseEmitter agentRun(String userPrompt, String sessionId, List<Long>attachments, String userId) {
         initializeRunState(sessionId, userId);
         emitter = new SseEmitter(1000 * 60 * 8L);
         agentSessionRegistry.register(sessionId, this);

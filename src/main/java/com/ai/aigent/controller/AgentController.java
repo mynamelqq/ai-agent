@@ -4,7 +4,7 @@ import cn.hutool.json.JSONUtil;
 import com.ai.aigent.agent.Manus;
 import com.ai.aigent.agent.model.AgentMessagePayload;
 import com.ai.aigent.agent.model.AgentSessionRegistry;
-import com.ai.aigent.app.CodeApp;
+import com.ai.aigent.app.SpringAiCode;
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.VO.AgentMessageVO;
 import com.ai.aigent.entity.VO.AgentSessionVO;
@@ -14,7 +14,6 @@ import com.ai.aigent.entity.domin.AnonymousUser;
 import com.ai.aigent.entity.dto.AgentSendReq;
 import com.ai.aigent.service.*;
 import com.ai.aigent.utils.JWTUtils;
-import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -37,7 +36,7 @@ import java.util.stream.Collectors;
 @RequestMapping("/agent")
 public class AgentController {
     @Resource
-    private CodeApp codeApp;
+    private SpringAiCode springAiCode;
 
     @Autowired
     private UsersService usersService;
@@ -58,7 +57,7 @@ public class AgentController {
             throw new IllegalArgumentException("用户未登录");
         }
         session.setUserId(userId);
-        session.setTitle(codeApp.genTitle(message));
+        session.setTitle(springAiCode.genTitle(message));
         session.setCreateTime(new Date());
         session.setUpdateTime(new Date());
         session.setId(SessionId);
@@ -177,7 +176,7 @@ public class AgentController {
         dailyService.checkAndConsume(uid,type);
         Manus manus = manusProvider.getObject();
         // 6. 启动流
-        return manus.runStream(prompt,sessionId,agentSendReq.getAttachments(),userId);
+        return manus.agentRun(prompt,sessionId,agentSendReq.getAttachments(),userId);
     }
     @Transactional
     @PostMapping("/delete")
