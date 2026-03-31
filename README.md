@@ -182,7 +182,7 @@ Authorization: Bearer <your-access-token>
 ### 1. Clone
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/mynamelqq/aigent.git
 cd aigent
 ```
 
