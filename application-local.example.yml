@@ -1,0 +1,87 @@
+spring:
+  application:
+    name: ai-gent
+  profiles:
+    active: local
+
+  datasource:
+    mysql:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      jdbc-url: jdbc:mysql://localhost:3306/aigent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+      username: your_mysql_username
+      password: your_mysql_password
+    postgresql:
+      driver-class-name: org.postgresql.Driver
+      jdbc-url: jdbc:postgresql://localhost:5432/postgres
+      username: your_postgres_username
+      password: your_postgres_password
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: your_rabbitmq_username
+    password: your_rabbitmq_password
+    virtual-host: /
+
+  ai:
+    mcp:
+      client:
+        stdio:
+          servers-configuration: classpath:mcp-githubTool.json
+
+server:
+  port: 8123
+  servlet:
+    context-path: /api
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+  group-configs:
+    - group: default
+      paths-to-match: /**
+      packages-to-scan: com.ai.aigent.controller
+
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.ai.aigent.entity
+
+agent:
+  manus:
+    chat:
+      provider: openai
+      model: your_model_name
+
+logging:
+  level:
+    org.springframework.ai: INFO
+
+app:
+  security:
+    jwt-secret: your_jwt_secret
+
+cos:
+  secret-id: your_tencent_cos_secret_id
+  secret-key: your_tencent_cos_secret_key
+  region: your_cos_region
+  bucket: your_bucket_name
+
+llm:
+  openai:
+    api-key: your_openai_api_key
+    base-url: your_openai_base_url
+  dashscope:
+    api-key: your_dashscope_api_key
+  zhipu:
+    api-key: your_zhipu_api_key
