@@ -3,6 +3,7 @@ spring:
     host: localhost
     port: 5672
     username: admin
+
     password: 123321
     virtual-host: /
   datasource:
@@ -29,6 +30,12 @@ spring:
 #              url: http://localhost:8127
         stdio:
           servers-configuration: classpath:mcp-githubTool.json
+
+agent:
+  manus:
+    chat:
+      provider: openai
+      model: openai/gpt-oss-120b
 
 
 
