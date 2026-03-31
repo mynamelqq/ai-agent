@@ -195,10 +195,10 @@ public class SpringAiCode {
                      .frequencyPenalty(setting.getFrequencyPenalty())
 //                         .topK(setting.getTopk())
                      .model(setting.getChatModel());//maxTokens
-             if(supportsReasoning(setting.getChatModel())){
-                 chatOptionsBuilder.maxCompletionTokens(setting.getMaxTokens());
-             }
-             else chatOptionsBuilder.maxTokens(setting.getMaxTokens());
+//             if(supportsReasoning(setting.getChatModel())){
+//                 chatOptionsBuilder.maxCompletionTokens(setting.getMaxTokens());
+//             }
+//             else chatOptionsBuilder.maxTokens(setting.getMaxTokens());
              style = switch (setting.getTone()) {
                  case "professional" -> TonePrompt.professional;
                  case "detailed" -> TonePrompt.detailed;
@@ -225,7 +225,7 @@ public class SpringAiCode {
         if (Boolean.TRUE.equals(chatSendReq.getIsImageGen())) {
             localToolCallbacks = ToolCallbacks.from(imageGenerateTool,webScrapingTool);
         } else if (Boolean.TRUE.equals(chatSendReq.getIsSearch())) {
-            localToolCallbacks = ToolCallbacks.from(webSearchTool,webSearchTool);
+            localToolCallbacks = ToolCallbacks.from(webSearchTool,webScrapingTool);
         } else if (Boolean.TRUE.equals(chatSendReq.getIsGenerateFile())) {
             localToolCallbacks = ToolCallbacks.from(fileOperationTool,webSearchTool);
         } else {

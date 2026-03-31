@@ -4,7 +4,6 @@ package com.ai.aigent.tools;
 import com.ai.aigent.entity.VO.BochaWebSearchResponse;
 import com.ai.aigent.entity.dto.BochaWebSearchRequest;
 import com.ai.aigent.entity.dto.WebSearchResponseDTO;
-import com.ai.aigent.entity.dto.WebSearchResultDTO;
 import com.ai.aigent.utils.BochaWebSearchClient;
 import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;

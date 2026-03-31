@@ -1,11 +1,11 @@
 package com.ai.aigent.service.impl;
 
+import cn.hutool.core.util.RandomUtil;
 import com.ai.aigent.entity.domin.AnonymousUser;
 import com.ai.aigent.mapper.AnonymousUserMapper;
 import com.ai.aigent.service.AnonymousUserService;
 import com.ai.aigent.service.UserSettingService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -48,6 +48,9 @@ public class AnonymousUserServiceImpl extends ServiceImpl<AnonymousUserMapper, A
         String newAnonId = UUID.randomUUID().toString();
         AnonymousUser user = new AnonymousUser();
         user.setAnonId(newAnonId);
+        if(fingerprintHash==null||fingerprintHash.isEmpty()){
+            fingerprintHash = RandomUtil.randomString(10);
+        }
         user.setFingerprintHash(fingerprintHash);
         user.setIp(ip);
         user.setTotalTokensUsed(0L);

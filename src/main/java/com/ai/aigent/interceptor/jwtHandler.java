@@ -42,7 +42,7 @@ public class jwtHandler extends OncePerRequestFilter {
         return false;
     }
   private static final Set<String> White_LIST = new HashSet<>(Arrays.asList(
-        "/register","/login","/api/user/refresh/**","/api/user/password/forgot/update","/api/export/**","/api/ws/asr","/api/ai/ocr/**",
+        "/api/user/register","/api/user/login","/api/user/refresh/**","/api/user/password/forgot/update","/api/export/**","/api/ws/asr","/api/ai/ocr/**",
           "/api/ai/read/**","/api/ai/stop/**","/api/ws/tts",
           "/api/ws/notification/**","/api/notifications/broadcast",
           "/api/doc.html","/api/webjars/**","/api/favicon.ico","/api/v3/**"
@@ -58,7 +58,12 @@ public class jwtHandler extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
-        if(anonymousUserService.hasAnnoID(request)){
+       if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+           log.debug("options");
+           filterChain.doFilter(request, response);
+           return;
+       }
+       if(anonymousUserService.hasAnnoID(request)){
             filterChain.doFilter(request,response);
             return;
         }

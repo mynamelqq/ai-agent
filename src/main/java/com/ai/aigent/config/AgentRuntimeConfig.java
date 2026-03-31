@@ -1,11 +1,10 @@
 package com.ai.aigent.config;
 
-import com.ai.aigent.advisor.MySimpleLoggerAdvisor;
-import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -42,19 +41,24 @@ public class AgentRuntimeConfig {
 
     @Bean("manusChatOptions")
     public ChatOptions manusChatOptions() {
-        return DashScopeChatOptions.builder()
-                .enableThinking(true)
-                .temperature(0.6)
+        return OpenAiChatOptions.builder()
+                .model("openai/gpt-oss-120b")
                 .parallelToolCalls(true)
-                .model("qwen3-max")
                 .internalToolExecutionEnabled(false)
                 .build();
+//        return DashScopeChatOptions.builder()
+//                .enableThinking(true)
+//                .temperature(0.6)
+//                .parallelToolCalls(true)
+//                .model("qwen3-max-2026-01-23")
+//                .internalToolExecutionEnabled(false)
+//                .build();
     }
 
     @Bean("manusChatClient")
-    public ChatClient manusChatClient(@Qualifier("dashScopeChatModel") ChatModel dashscopeChatModel) {
+    public ChatClient manusChatClient(@Qualifier("openAiChatModel") ChatModel dashscopeChatModel) {
         return ChatClient.builder(dashscopeChatModel)
-                .defaultAdvisors(new MySimpleLoggerAdvisor())
+//                .defaultAdvisors(new MySimpleLoggerAdvisor())
                 .build();
     }
 }

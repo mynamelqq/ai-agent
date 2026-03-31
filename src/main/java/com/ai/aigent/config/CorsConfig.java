@@ -10,9 +10,10 @@ public class CorsConfig implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
                 .allowCredentials(true)
-                .allowedOriginPatterns("*")
-                .allowedMethods("POST","get","put","delete","options")
+                .allowedOriginPatterns("*")  // 或使用 .allowedOrigins("https://agent-fronter.vercel.app")
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")  // 全部大写
                 .allowedHeaders("*")
-                .exposedHeaders("*");
+                .exposedHeaders("*")
+                .maxAge(3600);  // 添加预检请求缓存时间
     }
 }

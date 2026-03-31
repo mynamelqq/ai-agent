@@ -1,7 +1,6 @@
 package com.ai.aigent.controller;
 
 import com.ai.aigent.entity.VO.NotificationVO;
-import com.ai.aigent.entity.dto.NotificationPushDTO;
 import com.ai.aigent.entity.dto.SendBatchNotificationRequest;
 import com.ai.aigent.entity.dto.SendNotificationRequest;
 import com.ai.aigent.service.NotificationService;
@@ -9,10 +8,7 @@ import com.ai.aigent.service.UsersService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.ServiceLoader;
 
 @RestController
 @RequestMapping("/notifications")

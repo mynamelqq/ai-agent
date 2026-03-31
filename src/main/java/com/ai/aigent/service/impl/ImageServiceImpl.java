@@ -1,24 +1,18 @@
 package com.ai.aigent.service.impl;
 
 import cn.hutool.core.util.RandomUtil;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.ai.aigent.entity.domin.Image;
-import com.ai.aigent.service.ImageService;
 import com.ai.aigent.mapper.ImageMapper;
-import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.ai.chat.model.ToolContext;
+import com.ai.aigent.service.ImageService;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.ai.image.ImagePrompt;
 import org.springframework.ai.image.ImageResponse;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.ai.zhipuai.ZhiPuAiImageModel;
 import org.springframework.ai.zhipuai.ZhiPuAiImageOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.net.http.HttpClient;
 import java.util.Date;
-import java.util.Map;
 
 /**
 * @author MECHREVO

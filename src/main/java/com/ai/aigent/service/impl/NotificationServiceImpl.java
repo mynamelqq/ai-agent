@@ -1,9 +1,11 @@
 package com.ai.aigent.service.impl;
 
 import com.ai.aigent.entity.VO.NotificationVO;
+import com.ai.aigent.entity.domin.Notification;
 import com.ai.aigent.entity.domin.UserNotification;
 import com.ai.aigent.entity.domin.Users;
 import com.ai.aigent.entity.dto.NotificationPushDTO;
+import com.ai.aigent.mapper.NotificationMapper;
 import com.ai.aigent.mapper.UserNotificationMapper;
 import com.ai.aigent.mapper.UsersMapper;
 import com.ai.aigent.service.NotificationService;
@@ -12,8 +14,6 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.ai.aigent.entity.domin.Notification;
-import com.ai.aigent.mapper.NotificationMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;

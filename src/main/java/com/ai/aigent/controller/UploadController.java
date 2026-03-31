@@ -8,7 +8,6 @@ import com.ai.aigent.service.AiAttachmentService;
 import com.ai.aigent.service.UsersService;
 import com.ai.aigent.service.impl.CosUploadService;
 import com.ai.aigent.utils.IdGenerator;
-import com.ai.aigent.utils.JWTUtils;
 import com.qcloud.cos.COSClient;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;

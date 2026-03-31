@@ -9,14 +9,11 @@ import com.ai.aigent.entity.VO.ChatMessageVO;
 import com.ai.aigent.entity.domin.*;
 import com.ai.aigent.exception.BusinessException;
 import com.ai.aigent.service.*;
-import com.ai.aigent.utils.JWTUtils;
 import com.ai.aigent.utils.KryoUtils;
 import com.ai.aigent.utils.PdfExportUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.core.toolkit.StringUtils;
-import com.baomidou.mybatisplus.extension.conditions.query.QueryChainWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,7 +28,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
-import javax.security.auth.login.LoginException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.*;
@@ -82,6 +78,13 @@ public class Controller {
                 .set(Conversation::getPinned,false).update();
         return Result.success();
     }
+    @GetMapping("/")
+    public String test()
+    {
+        log.debug("test");
+        return "test";
+    }
+
     @GetMapping("/list/message")
     public Result<List<ChatMessageVO>> listMessage(String ChatId)
     {

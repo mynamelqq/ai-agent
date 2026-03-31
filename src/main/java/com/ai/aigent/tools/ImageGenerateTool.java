@@ -2,7 +2,6 @@ package com.ai.aigent.tools;
 
 import cn.hutool.core.util.RandomUtil;
 import com.ai.aigent.entity.domin.Image;
-import com.ai.aigent.service.ChatMessageService;
 import com.ai.aigent.service.ImageService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ToolContext;
@@ -15,11 +14,8 @@ import org.springframework.ai.zhipuai.ZhiPuAiImageOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.Map;
-import java.util.Random;
 
 @Slf4j
 @Component

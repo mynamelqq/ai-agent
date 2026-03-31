@@ -1,11 +1,10 @@
 package com.ai.aigent.service.impl;
 
 import com.ai.aigent.constant.AiCientConstans;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.ai.aigent.entity.domin.UserSetting;
-import com.ai.aigent.service.UserSettingService;
 import com.ai.aigent.mapper.UserSettingMapper;
-import org.springframework.ai.openai.OpenAiChatOptions;
+import com.ai.aigent.service.UserSettingService;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
 
 /**
@@ -67,7 +66,7 @@ public class UserSettingServiceImpl extends ServiceImpl<UserSettingMapper, UserS
         userSetting.setTemperature(0.7);
         userSetting.setTopk(50);
         userSetting.setColorPoint("blue");
-        userSetting.setChatMemory(true);
+        userSetting.setChatMemory(false);
         if(type=="user"){
             userSetting.setMaxTokens(100000);//10万tokens限制
         }

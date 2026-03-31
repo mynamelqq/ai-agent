@@ -1,9 +1,7 @@
 package com.ai.aigent.agent.model;
-import cn.hutool.core.collection.CollectionUtil;
+
 import lombok.Getter;
 import lombok.Setter;
-import org.springframework.ai.chat.messages.AbstractMessage;
-import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 
 import java.util.Collections;

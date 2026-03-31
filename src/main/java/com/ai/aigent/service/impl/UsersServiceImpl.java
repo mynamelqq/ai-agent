@@ -4,18 +4,12 @@ import com.ai.aigent.entity.domin.AnonymousUser;
 import com.ai.aigent.entity.domin.Users;
 import com.ai.aigent.mapper.UsersMapper;
 import com.ai.aigent.service.AnonymousUserService;
-import com.ai.aigent.service.UserSettingService;
 import com.ai.aigent.service.UsersService;
 import com.ai.aigent.utils.JWTUtils;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import io.swagger.v3.oas.models.security.SecurityScheme;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
-import javax.security.auth.login.LoginException;
-import java.util.Date;
-import java.util.UUID;
 
 /**
 * @author MECHREVO

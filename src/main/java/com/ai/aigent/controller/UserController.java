@@ -1,7 +1,5 @@
 package com.ai.aigent.controller;
 
-import cn.hutool.core.lang.UUID;
-import com.ai.aigent.constant.AiCientConstans;
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.VO.UserVo;
 import com.ai.aigent.entity.domin.UserSetting;
@@ -53,7 +51,7 @@ public class UserController {
         user.setIp(request.getRemoteAddr());
         user.setNickname(nickName);
         user.setUsername(email);
-        user.setDailyTokenLimit(200000);
+        user.setDailyTokenLimit(500000);
         user.setTotalTokensUsed(0L);
         user.setPassword(password);
         user.setCreatedAt(LocalDateTime.now());

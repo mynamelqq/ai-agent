@@ -1,11 +1,7 @@
 package com.ai.aigent.agent;
 
 import cn.hutool.core.collection.CollectionUtil;
-import com.ai.aigent.agent.model.AgentEvent;
-import com.ai.aigent.agent.model.AgentMessageEnum;
-import com.ai.aigent.agent.model.AgentMessagePayload;
-import com.ai.aigent.agent.model.AgentState;
-import com.ai.aigent.agent.model.ToolResultMessage;
+import com.ai.aigent.agent.model.*;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -105,7 +101,8 @@ public class ToolCallAgent extends ReActAgent {
                             }
                             return;
                         }
-
+                        if(chatResponse.getResult()==null)return;
+                        if(chatResponse.getResult().getOutput()==null)return;
                         var output = chatResponse.getResult().getOutput();
                         Optional.ofNullable(output.getMetadata())
                                 .map(meta -> meta.get("reasoningContent"))
