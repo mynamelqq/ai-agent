@@ -15,7 +15,7 @@ import java.io.IOException;
 public class LoveAppVectorStoreConfig {
 
     @Resource
-    private LoveAppDocumentReader reader;
+    private DocumentReader reader;
 
    @Bean
     @Qualifier("loveAppVectorStore")

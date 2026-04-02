@@ -7,7 +7,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-336791)
 ![License](https://img.shields.io/badge/license-custom-lightgrey)
 
-基于 Spring Boot 3 与 Spring AI 构建的智能体后端项目，提供 AI 对话、Agent 执行、RAG 检索增强、文件上传、图像生成、通知推送、OCR、TTS/ASR、视频理解与用户鉴权等能力。
+基于 Spring Boot 3 与 Spring AI v1.1.0 构建的智能体后端项目，提供 AI 对话、Agent 执行、RAG 检索增强、文件上传、图像生成、通知推送、OCR、TTS/ASR、视频理解与用户鉴权等能力。
 
 这个仓库适合作为 AI 应用、工具调用型 Agent 平台、聊天助手后端服务的基础工程。
 

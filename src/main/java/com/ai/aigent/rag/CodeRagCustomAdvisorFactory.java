@@ -2,7 +2,7 @@ package com.ai.aigent.rag;
 //创建自定义Rag检索增强
 
 
-public class CodeAppRagCustomAdvisorFactory {
+public class CodeRagCustomAdvisorFactory {
 //    public static Advisor createLoveAppAdvisor(VectorStore vectorStore,String status)
 //    {
 //
