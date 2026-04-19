@@ -53,6 +53,7 @@ public class AttachmentReaderUtil {
     @Autowired
     private AiAttachmentService attachmentService;
   public static List<String> split(String text, int chunkSize, int overlap) {
+
         List<String> chunks = new ArrayList<>();
         int start = 0;
         while (start < text.length()) {

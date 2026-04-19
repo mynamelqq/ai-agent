@@ -26,9 +26,6 @@ public class ChatMessage {
      * 
      */
     private String conversationId;
-    /**
-     * 
-     */
     private String messageType;
     @TableField(typeHandler = ByteArrayTypeHandler.class)
     private byte[] payload;
@@ -36,6 +33,7 @@ public class ChatMessage {
     private Boolean isThinking;
     private Boolean isImage;
     private Boolean isGenerate;
+    private Boolean completed;
     private Boolean isEcharts;
     private Integer cost;
     private Integer promptTokens;

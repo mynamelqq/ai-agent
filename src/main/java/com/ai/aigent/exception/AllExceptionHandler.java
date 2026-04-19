@@ -2,6 +2,7 @@ package com.ai.aigent.exception;
 
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.constant.ResultCodeEnum;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
@@ -170,13 +171,30 @@ public class AllExceptionHandler  {
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<Void> handleException(
-            Exception e, HttpServletRequest request) {
-        String accept = request.getHeader("Accept");
-        if (accept != null && accept.contains("text/event-stream")) {
-            log.warn("SSE 连接异常（客户端可能已断开）: {}", e.getMessage());
-            return null; // 直接返回 null，不写响应体
+            Exception e, HttpServletRequest request) throws Exception {
+        String uri = request.getRequestURI();
+        DispatcherType dispatcherType = request.getDispatcherType();
+        // 1. SSE/异步流接口，直接放过，不返回 Result
+        if (isStreamingRequest(uri, dispatcherType)) {
+            log.warn("skip global exception handling for streaming request, uri={}, dispatcherType={}",
+                    uri, dispatcherType, e);
+            throw e;
         }
+
         return Result.error(500, "系统内部错误，请联系管理员");
+    }
+
+    private boolean isStreamingRequest(String uri, DispatcherType dispatcherType) {
+        if (dispatcherType == DispatcherType.ASYNC) {
+            return true;
+        }
+
+        if (uri == null) {
+            return false;
+        }
+
+        return uri.startsWith("/api/ai/chat/async/")
+                || uri.startsWith("/api/ai/chat/resubscribe");
     }
 
 }

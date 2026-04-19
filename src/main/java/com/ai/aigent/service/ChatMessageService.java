@@ -15,7 +15,7 @@ import java.util.List;
 
 public interface ChatMessageService extends IService<ChatMessage> {
 
-     void saveAssistantMessage(String conversationId,String message,Integer token,Integer cost,
+     void saveAssistantMessage(String id,String conversationId,String message,Integer token,Integer cost,
      Integer promptTokens,  Integer completionTokens,Integer cachedTokens,Long thinkingTime);
      void updateMessage(String conversationId,String message,String messageId,String type,
                         Integer token,Integer cost
@@ -24,5 +24,8 @@ public interface ChatMessageService extends IService<ChatMessage> {
      void saveMessages(String conversationId, List<Message> messages);
      List<Message> loadRecentMessages(String conversationId, int lastN);
      long countByConversationId(String conversationId);
-     public Message deserialize(ChatMessage entity);
+     Message deserialize(ChatMessage entity);
+     void updateAssistantMessage(String id,String conversationId, String message, Integer token,Integer cost,
+                                       Integer promptTokens,  Integer completionTokens,Integer cachedTokens,Long thinkingTime);
+
 }

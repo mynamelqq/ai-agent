@@ -1,6 +1,7 @@
 package com.ai.aigent.app;
 
 import cn.hutool.core.io.resource.InputStreamResource;
+import cn.hutool.core.util.RandomUtil;
 import cn.hutool.json.JSONUtil;
 import com.ai.aigent.advisor.JdbcChatMemoryAdvisor;
 import com.ai.aigent.advisor.MySimpleLoggerAdvisor;
@@ -15,6 +16,8 @@ import com.ai.aigent.entity.dto.ChatEmbeddingDTO;
 import com.ai.aigent.entity.dto.ChatSendReq;
 import com.ai.aigent.entity.dto.RegenDTO;
 import com.ai.aigent.service.*;
+import com.ai.aigent.service.impl.CachedService;
+import com.ai.aigent.service.impl.StreamSessionRegistry;
 import com.ai.aigent.tools.FileOperationTool;
 import com.ai.aigent.tools.ImageGenerateTool;
 import com.ai.aigent.tools.WebScrapingTool;
@@ -47,6 +50,8 @@ import org.springframework.ai.zhipuai.api.ZhiPuAiApi;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.MimeTypeUtils;
@@ -60,8 +65,11 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.concurrent.Queues;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -123,6 +131,8 @@ public class SpringAiCode {
     @Autowired
     private UserUsageDailyService dailyService;
     @Autowired
+    private StringRedisTemplate redisTemplate;
+    @Autowired
     private UsersService usersService;
     @Autowired
     private UserSettingService userSettingService;
@@ -157,20 +167,18 @@ public class SpringAiCode {
     private WebSearchTool webSearchTool;
     @Autowired
     private WebScrapingTool webScrapingTool;
-    @Resource
-    private RabbitTemplate rabbitTemplate;
     @Autowired
     private ImageGenerateTool imageGenerateTool;
+    @Autowired
+    private StreamSessionRegistry streamSessionRegistry;
     @Resource
     private AiAttachmentService attachmentService;
     @Autowired
     private FileOperationTool fileOperationTool;
-    public DashScopeChatOptions thinking()
-    {
-        return DashScopeChatOptions.builder()
-                    .model("qwq-plus")
-                    .enableThinking(true).build();
-    }
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
+    @Autowired
+    private CachedService cachedService;
     @Transactional
    public Flux<ChatResult> doChatStream(ChatSendReq chatSendReq, String userId, String type) {
         String chatId = chatSendReq.getChatId();
@@ -233,6 +241,8 @@ public class SpringAiCode {
         }
         // 4️⃣ 先存用户消息
         chatMessageService.saveMessage(chatSendReq);
+        Long assistantId= RandomUtil.randomLong(0,10000000000L);
+        chatMessageService.saveAssistantMessage(assistantId.toString(),chatId,"",0,0,0,0,0,0L);
         // 提到外面，生命周期清晰
         StringBuilder full = new StringBuilder();
         StringBuilder reasoningContent = new StringBuilder();
@@ -241,12 +251,14 @@ public class SpringAiCode {
         AtomicReference<Integer> token = new AtomicReference<>(0);
         AtomicReference<Integer> prompt_tokens = new AtomicReference<>(0);
         AtomicReference<Integer> completion_tokens = new AtomicReference<>(0);
+        AtomicInteger seq = new AtomicInteger(0);
         AtomicReference<Boolean>isThinking = new AtomicReference<>(false);
         AtomicReference<Long>thinkingStartTime=new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long>thinkingEndTime=new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Integer> cached_tokens = new AtomicReference<>(0);
         AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
+        AtomicReference<Long>id=new AtomicReference<>(assistantId);
         StreamTextParseState wrappedTextState = new StreamTextParseState();
         // 5️⃣ 响应式读取附件
         Mono<String> attachmentMono = Mono.fromCallable(() -> {
@@ -279,7 +291,9 @@ public class SpringAiCode {
              system += "。请逐步推理并给出最终答案。";
          }
         // 7️⃣ Sink：解耦 AI 流和 SSE 连接
-        Sinks.Many<ChatResult> sink = Sinks.many().unicast().onBackpressureBuffer();
+        Sinks.Many<ChatResult> sink = Sinks.many().multicast()
+                .onBackpressureBuffer(Queues.SMALL_BUFFER_SIZE, false);
+        streamSessionRegistry.register(chatId, id.get(), sink);
         Map<String, Object> toolContext = Map.of("chatId", chatId,"userId",userId);
 
         // 8️⃣ 后台独立订阅 AI 流，生命周期与 SSE 无关
@@ -325,6 +339,7 @@ public class SpringAiCode {
                         .map(meta -> meta.get("reasoningContent"))
                         .map(Object::toString)
                         .orElse("");
+                int currentSeq = seq.incrementAndGet();
                 if (!metadataReasoning.isEmpty()) {
                     reasoningContent.append(metadataReasoning);
                     if(!isThinking.get()){
@@ -351,8 +366,17 @@ public class SpringAiCode {
                     }
                     full.append(parsedTextChunk.text());
                 }
+                cachedService.save(
+                        chatId,
+                        assistantId.toString(),
+                        full.toString(),
+                        reasoningContent.toString(),
+                        currentSeq,
+                        "streaming"
+                );
                 // 构建并推入 sink
                 ChatResult chatResult = new ChatResult();
+                chatResult.setSeq(seq.get());
                 chatResult.setReasoning(metadataReasoning + parsedTextChunk.reasoning());
                 if (!parsedTextChunk.text().isEmpty()) {
                     chatResult.setText(parsedTextChunk.text());
@@ -364,6 +388,7 @@ public class SpringAiCode {
         })
         .doOnComplete(() -> {
             // 只处理 usage，不调 sink.tryEmitComplete()，交给 doFinally 统一处理
+
             ParsedTextChunk tailChunk = flushStreamTextChunk(wrappedTextState);
             if (!tailChunk.reasoning().isEmpty()) {
                 reasoningContent.append(tailChunk.reasoning());
@@ -392,6 +417,8 @@ public class SpringAiCode {
                     cached_tokens.set(Integer.parseInt(detailsMap.get("cached_tokens").toString()));
                 }
             }
+            streamSessionRegistry.remove(chatId, id.get());
+            cachedService.markDone(chatId,id.get().toString(),full.toString(),reasoningContent.toString());
         })
         .doFinally(signal -> {
             String finalAnswer = buildFinalAnswer(reasoningContent, full);
@@ -411,7 +438,7 @@ public class SpringAiCode {
                                 JSONUtil.toJsonStr(dto)
                         );
                     }
-                    saveAndRecord(chatId, userId, type, finalAnswer, token,
+                    saveAndRecord(id.get(),chatId, userId, type, finalAnswer, token,
                             prompt_tokens, completion_tokens, cached_tokens, startTime, endTime,
                             (thinkingEndTime.get()-thinkingStartTime.get()),(setting!=null?setting.getChatModel():""));
                 }
@@ -437,7 +464,7 @@ public class SpringAiCode {
                     // 主动取消：保存已有内容
                     cancelTokenRegistry.clear(chatId);
                     if (!finalAnswer.isEmpty()) {
-                        saveAndRecord(chatId, userId, type, finalAnswer, token,
+                        saveAndRecord(id.get(),chatId, userId, type, finalAnswer, token,
                                 prompt_tokens, completion_tokens, cached_tokens, startTime,
                                 endTime,(thinkingEndTime.get()-thinkingStartTime.get()),(setting!=null?setting.getChatModel():"qwq-plus"));
                     }
@@ -451,9 +478,7 @@ public class SpringAiCode {
         })
         .subscribeOn(Schedulers.boundedElastic())
         .subscribe(); // 独立订阅，脱离 SSE 生命周期
-
         cancelTokenRegistry.register(chatId, disposable);
-
         return Flux.concat(prefixFlux, sink.asFlux())
                 .onErrorResume(e -> {
                     log.error("SSE 流异常", e);
@@ -646,14 +671,15 @@ public class SpringAiCode {
         }
         return finalAnswer + full;
     }
-    private void saveAndRecord(String chatId, String userId, String type, String finalAnswer,
+    private void saveAndRecord(Long id,String chatId, String userId, String type, String finalAnswer,
             AtomicReference<Integer> token, AtomicReference<Integer> prompt_tokens,
             AtomicReference<Integer> completion_tokens, AtomicReference<Integer> cached_tokens,
             AtomicReference<Long> startTime, AtomicReference<Long> endTime,Long thinkingTime,String model) {
+
         dailyService.addTotalUsage(userId, type, token.get());
         dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),
                               completion_tokens.get(), cached_tokens.get(),"chat",model);
-        chatMessageService.saveAssistantMessage(chatId, finalAnswer, token.get(),
+        chatMessageService.updateAssistantMessage(id.toString(),chatId, finalAnswer, token.get(),
                 (int) (endTime.get() - startTime.get()),prompt_tokens.get(), completion_tokens.get(), cached_tokens.get(),
                 thinkingTime);
     }
@@ -663,8 +689,9 @@ public class SpringAiCode {
         ChatMessage chatMessage = chatMessageService.getById(userMessageId);
         UserMessage userMessage = KryoUtils.deserialize(chatMessage.getPayload());
         String chatId = regenDTO.getChatId();
+        Long assistantMessageId = Long.parseLong(regenDTO.getAssistantMessageId());
         String message = userMessage.getText();
-        UserSetting setting = null;
+        UserSetting setting;
         AtomicReference<Boolean> isToolAuto = new AtomicReference<>(true);
         chatOptionsBuilder = OpenAiChatOptions.builder();
         String style = "";
@@ -672,38 +699,31 @@ public class SpringAiCode {
         List<AiAttachment> list = attachmentService.list(
                 new LambdaQueryWrapper<AiAttachment>().eq(AiAttachment::getChatId, userMessageId));
 
-        if (Objects.equals(type, "user")) {
-            setting = userSettingService.getByUserId(userId,"user");
-            if (setting != null) {
-                chatOptionsBuilder.temperature(setting.getTemperature())
-                        .frequencyPenalty(setting.getFrequencyPenalty())
-                        .model(setting.getChatModel());
-                if (supportsReasoning(setting.getChatModel())) {
-                    chatOptionsBuilder.maxCompletionTokens(setting.getMaxTokens());
-                } else {
-                    chatOptionsBuilder.maxTokens(setting.getMaxTokens());
-                }
-                style = switch (setting.getTone()) {
-                    case "professional" -> TonePrompt.professional;
-                    case "detailed" -> TonePrompt.detailed;
-                    case "teaching" -> TonePrompt.teaching;
-                    case "friendly" -> TonePrompt.friendly;
-                    case "funny" -> TonePrompt.funny;
-                    case "neutral" -> TonePrompt.neutral;
-                    case "sharp" -> TonePrompt.sharp;
-                    case "critical" -> TonePrompt.critical;
-                    case "poisonous" -> TonePrompt.poisonous;
-                    default -> TonePrompt.concise;
-                };
-                if (setting.getIsSummary()) {
-                    chatClientBuilder.defaultAdvisors(summaryMemoryAdvisor);
-                }
-                if (setting.getIsExtend()) {
-                    extendedPrompt = SystemPrompt.ExtendPrompt;
-                }
-                if (Objects.equals(setting.getToolMode(), "off")) {
-                    isToolAuto.set(false);
-                }
+        setting = userSettingService.getByUserId(userId, type);
+        if (setting != null) {
+            chatOptionsBuilder.temperature(setting.getTemperature())
+                    .frequencyPenalty(setting.getFrequencyPenalty())
+                    .model(setting.getChatModel());
+            style = switch (setting.getTone()) {
+                case "professional" -> TonePrompt.professional;
+                case "detailed" -> TonePrompt.detailed;
+                case "teaching" -> TonePrompt.teaching;
+                case "friendly" -> TonePrompt.friendly;
+                case "funny" -> TonePrompt.funny;
+                case "neutral" -> TonePrompt.neutral;
+                case "sharp" -> TonePrompt.sharp;
+                case "critical" -> TonePrompt.critical;
+                case "poisonous" -> TonePrompt.poisonous;
+                default -> TonePrompt.concise;
+            };
+            if (setting.getIsSummary()) {
+                chatClientBuilder.defaultAdvisors(summaryMemoryAdvisor);
+            }
+            if (setting.getIsExtend()) {
+                extendedPrompt = SystemPrompt.ExtendPrompt;
+            }
+            if (Objects.equals(setting.getToolMode(), "off")) {
+                isToolAuto.set(false);
             }
         }
 
@@ -713,7 +733,6 @@ public class SpringAiCode {
             attachmentChat.setText("<<<ATTACHMENT_LOADING>>>");
             prefixFlux = Flux.just(attachmentChat);
         }
-
         ChatClient chatClient = chatClientBuilder.build();
         ToolCallback[] localToolCallbacks;
         if (Boolean.TRUE.equals(chatMessage.getIsImage())) {
@@ -721,7 +740,7 @@ public class SpringAiCode {
         } else if (Boolean.TRUE.equals(chatMessage.getIsSearch())) {
             localToolCallbacks = ToolCallbacks.from(webSearchTool,webScrapingTool);
         } else if (Boolean.TRUE.equals(chatMessage.getIsGenerate())) {
-            localToolCallbacks = ToolCallbacks.from(fileOperationTool,webScrapingTool);
+            localToolCallbacks = ToolCallbacks.from(fileOperationTool,webSearchTool);
         } else {
             localToolCallbacks = ToolCallbacks.from(webScrapingTool);
         }
@@ -729,11 +748,11 @@ public class SpringAiCode {
         StringBuilder full = new StringBuilder();
         StringBuilder reasoningContent = new StringBuilder();
         List<Media> mediaList = new ArrayList<>();
-        AtomicReference<Boolean> hasToolCall = new AtomicReference<>(false);
         AtomicReference<Usage> finalUsage = new AtomicReference<>();
         AtomicReference<Integer> token = new AtomicReference<>(0);
         AtomicReference<Integer> prompt_tokens = new AtomicReference<>(0);
         AtomicReference<Integer> completion_tokens = new AtomicReference<>(0);
+        AtomicInteger seq = new AtomicInteger(0);
         AtomicReference<Boolean> isThinking = new AtomicReference<>(false);
         AtomicReference<Long> thinkingStartTime = new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long> thinkingEndTime = new AtomicReference<>(System.currentTimeMillis());
@@ -741,7 +760,7 @@ public class SpringAiCode {
         AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
         StreamTextParseState wrappedTextState = new StreamTextParseState();
-
+        AtomicReference<Long>id=new AtomicReference<>(assistantMessageId);
         Mono<String> attachmentMono = Mono.fromCallable(() -> {
             if (list.isEmpty()) {
                 return "";
@@ -774,7 +793,8 @@ public class SpringAiCode {
             system += "。请逐步推理并给出最终答案。";
         }
 
-        Sinks.Many<ChatResult> sink = Sinks.many().unicast().onBackpressureBuffer();
+        Sinks.Many<ChatResult> sink = Sinks.many().multicast().onBackpressureBuffer();
+        streamSessionRegistry.register(chatId, assistantMessageId, sink);
         Map<String, Object> toolContext = Map.of("chatId", chatId,"userId",userId);
         String finalSystem = system;
 
@@ -782,7 +802,6 @@ public class SpringAiCode {
         Disposable disposable = attachmentMono.<ChatResponse>flatMapMany(attachmentContent -> {
             var promptBuilder = chatClient.prompt()
                     .options(chatOptionsBuilder.build())
-                    .tools(new WebScrapingTool())
                     .user(promptUserSpec -> promptUserSpec
                             .text(message)
                             .media(mediaList.toArray(new Media[0])))
@@ -817,6 +836,7 @@ public class SpringAiCode {
                         var result = chatResponse.getResult();
                         if (result == null) return;
                         var msg = result.getOutput();
+                        int currentSeq = seq.incrementAndGet();
                         String metadataReasoning = Optional.ofNullable(msg.getMetadata())
                                 .map(meta -> meta.get("reasoningContent"))
                                 .map(Object::toString)
@@ -847,15 +867,21 @@ public class SpringAiCode {
                             }
                             full.append(parsedTextChunk.text());
                         }
+                        cachedService.save(
+                                chatId,
+                                assistantMessageId.toString(),
+                                full.toString(),
+                                reasoningContent.toString(),
+                                currentSeq,
+                                "streaming"
+                        );
                         ChatResult chatResult = new ChatResult();
+                        chatResult.setSeq(currentSeq);
                         chatResult.setReasoning(metadataReasoning + parsedTextChunk.reasoning());
                         if (!parsedTextChunk.text().isEmpty()) {
                             chatResult.setText(parsedTextChunk.text());
                         }
                         sink.tryEmitNext(chatResult);
-                        if (chatResponse.hasToolCalls()) {
-                            hasToolCall.set(true);
-                        }
                     } catch (Throwable e) {
                         log.error("解析 chatResponse 时发生异常", e);
                     }
@@ -889,23 +915,17 @@ public class SpringAiCode {
                             cached_tokens.set(Integer.parseInt(detailsMap.get("cached_tokens").toString()));
                         }
                     }
+                    streamSessionRegistry.remove(chatId, assistantMessageId);
+                    cachedService.markDone(chatId,id.get().toString(), full.toString(), reasoningContent.toString());
                 })
                 .doFinally(signal -> {
-                    if (hasToolCall.get() && Boolean.TRUE.equals(chatMessage.getIsImage())) {
-                        sink.tryEmitComplete();
-                        return;
-                    }
                     String finalAnswer = buildFinalAnswer(reasoningContent, full);
                     String model = finalSetting != null ? finalSetting.getChatModel() : "";
                     if (signal == SignalType.ON_COMPLETE) {
                         if (!finalAnswer.isEmpty()) {
-                            dailyService.addTotalUsage(userId, type, token.get());
-                            dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),
-                                    completion_tokens.get(), cached_tokens.get(), "chat", model);
-                            chatMessageService.updateMessage(chatId, finalAnswer, regenDTO.getAssistantMessageId(), "assistant",
-                                    token.get(), (int) (endTime.get() - startTime.get()), prompt_tokens.get(),
-                                    completion_tokens.get(), cached_tokens.get(),
-                                    (thinkingEndTime.get() - thinkingStartTime.get()));
+                            saveAndRecord(id.get(), chatId, userId, type, finalAnswer, token,
+                                    prompt_tokens, completion_tokens, cached_tokens, startTime, endTime,
+                                    (thinkingEndTime.get() - thinkingStartTime.get()), model);
                         }
                         sink.tryEmitComplete();
                     } else if (signal == SignalType.CANCEL) {
@@ -927,13 +947,9 @@ public class SpringAiCode {
                             }
                             cancelTokenRegistry.clear(chatId);
                             if (!finalAnswer.isEmpty()) {
-                                dailyService.addTotalUsage(userId, type, token.get());
-                                dailyService.addUsage(userId, type, token.get(), prompt_tokens.get(),
-                                        completion_tokens.get(), cached_tokens.get(), "chat", model);
-                                chatMessageService.updateMessage(chatId, finalAnswer, regenDTO.getAssistantMessageId(),
-                                        "assistant", token.get(), (int) (endTime.get() - startTime.get()),
-                                        prompt_tokens.get(), completion_tokens.get(), cached_tokens.get(),
-                                        (thinkingEndTime.get() - thinkingStartTime.get()));
+                                saveAndRecord(id.get(), chatId, userId, type, finalAnswer, token,
+                                        prompt_tokens, completion_tokens, cached_tokens, startTime, endTime,
+                                        (thinkingEndTime.get() - thinkingStartTime.get()), model);
                             }
                             sink.tryEmitComplete();
                         }

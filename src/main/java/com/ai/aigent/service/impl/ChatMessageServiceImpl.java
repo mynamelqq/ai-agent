@@ -1,5 +1,6 @@
 package com.ai.aigent.service.impl;
 
+import cn.hutool.core.util.RandomUtil;
 import com.ai.aigent.entity.domin.ChatMessage;
 import com.ai.aigent.entity.domin.Conversation;
 import com.ai.aigent.entity.domin.UserSetting;
@@ -33,11 +34,12 @@ import java.util.List;
 public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatMessage>
     implements ChatMessageService {
     @Override
-    public void saveAssistantMessage(String conversationId, String message, Integer token,Integer cost,
+    public void saveAssistantMessage(String id,String conversationId, String message, Integer token,Integer cost,
      Integer promptTokens,  Integer completionTokens,Integer cachedTokens,Long thinkingTime
     ) {
             AssistantMessage build = AssistantMessage.builder().content(message).build();
             ChatMessage entity = new ChatMessage();
+            entity.setId(Long.parseLong(id));
             entity.setConversationId(conversationId);
             entity.setThinkingTime(safeToDbInt(thinkingTime));
             entity.setCreateTime(LocalDateTime.now());
@@ -49,10 +51,38 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             entity.setIsImage(false);
             entity.setIsGenerate(false);
             entity.setIsThinking(false);
+            entity.setCompleted(false);
             entity.setIsEcharts(false);
             entity.setIsSearch(false);
             entity.setMessageType("assistant");
             this.save(entity);
+    }
+
+
+    @Override
+    public void updateAssistantMessage(String id,String conversationId, String message, Integer token,Integer cost,
+                                     Integer promptTokens,  Integer completionTokens,Integer cachedTokens,Long thinkingTime
+    ) {
+        AssistantMessage build = AssistantMessage.builder().content(message).build();
+        ChatMessage assistantMessage = getById(id);
+        assistantMessage.setPayload(KryoUtils.serialize(build));
+        assistantMessage.setToken(token);
+        assistantMessage.setThinkingTime(safeToDbInt(thinkingTime));
+        assistantMessage.setCreateTime(LocalDateTime.now());
+        assistantMessage.setCachedTokens(cachedTokens);
+        assistantMessage.setPromptTokens(promptTokens);
+        assistantMessage.setCost(cost);
+        assistantMessage.setCompletionTokens(completionTokens);
+        lambdaUpdate().eq(ChatMessage::getId,assistantMessage.getId())
+                .set(ChatMessage::getPayload, KryoUtils.serialize(new AssistantMessage(message)))
+                .set(ChatMessage::getCost,cost)
+                .set(ChatMessage::getThinkingTime,safeToDbInt(thinkingTime))
+                .setSql("prompt_tokens = prompt_tokens + "+promptTokens)
+                .setSql("completion_tokens = completion_tokens + "+completionTokens)
+                .setSql("cached_tokens = cached_tokens + "+cachedTokens)
+                .setSql("token = token + "+ token)
+                .set(ChatMessage::getCompleted,true)
+                .update();
     }
     @Override
     public void updateMessage(String conversationId, String message, String messageId, String type, Integer token,Integer cost,
@@ -111,37 +141,38 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
     private ConversationService conversationService;
     @Autowired
     private UserSettingService userSettingService;
+
     public List<Message> loadRecentMessages(String conversationId, int lastN) {
         if (lastN <= 0) {
             return Collections.emptyList();
         }
         Conversation conversation = conversationService.getById(conversationId);
-        if(conversation==null){
+        if (conversation == null) {
             return Collections.emptyList();
         }
         String userId = conversation.getUserId();
         UserSetting userSetting = userSettingService.getById(userId);//只获取不创建
-        if(userSetting!=null){
-            lastN=userSetting.getContextWindow();
+        if (userSetting != null) {
+            lastN = userSetting.getContextWindow();
         }
         // ① 先查出最新一条的 createTime
         ChatMessage latest = this.getOne(
-            Wrappers.<ChatMessage>lambdaQuery()
-                .eq(ChatMessage::getConversationId, conversationId)
-                .orderByDesc(ChatMessage::getCreateTime)
-                .last("LIMIT 1")
+                Wrappers.<ChatMessage>lambdaQuery()
+                        .eq(ChatMessage::getConversationId, conversationId)
+                        .orderByDesc(ChatMessage::getCreateTime)
+                        .last("LIMIT 1")
         );
         if (latest == null) {
             return Collections.emptyList();
         }
         // ② 排除最新那条，再取 lastN 条
         List<ChatMessage> entities = this.list(
-            Wrappers.<ChatMessage>lambdaQuery()
-                .eq(ChatMessage::getConversationId, conversationId)
-                .ne(ChatMessage::getId, latest.getId()) // 用主键排除
-                .select(ChatMessage::getPayload, ChatMessage::getCreateTime)
-                .orderByDesc(ChatMessage::getCreateTime)
-                .last("LIMIT " + lastN)
+                Wrappers.<ChatMessage>lambdaQuery()
+                        .eq(ChatMessage::getConversationId, conversationId)
+                        .ne(ChatMessage::getId, latest.getId()) // 用主键排除
+                        .select(ChatMessage::getPayload, ChatMessage::getCreateTime)
+                        .orderByDesc(ChatMessage::getCreateTime)
+                        .last("LIMIT " + lastN)
         );
         if (userSetting!=null) {//有登录才创建
              long total = this.count(

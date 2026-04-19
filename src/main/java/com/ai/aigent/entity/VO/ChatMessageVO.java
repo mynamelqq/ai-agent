@@ -9,7 +9,7 @@ import java.util.List;
 public class ChatMessageVO {
 
     private String id;
-
+    private Boolean completed;
     private String conversationId;
     private Integer token;
     private String messageType;

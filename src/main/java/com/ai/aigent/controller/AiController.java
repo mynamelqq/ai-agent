@@ -6,31 +6,35 @@ import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.VO.ChatResult;
 import com.ai.aigent.entity.domin.AnonymousUser;
 import com.ai.aigent.entity.domin.Conversation;
-import com.ai.aigent.entity.dto.ChatSendReq;
-import com.ai.aigent.entity.dto.ReadReq;
-import com.ai.aigent.entity.dto.RegenDTO;
-import com.ai.aigent.entity.dto.VideoUnderstandReq;
+import com.ai.aigent.entity.dto.*;
 import com.ai.aigent.service.*;
+import com.ai.aigent.service.impl.CachedService;
+import com.ai.aigent.service.impl.StreamSessionRegistry;
 import com.ai.aigent.utils.CosyVoiceTtsService;
 import com.ai.aigent.utils.JWTUtils;
 import com.ai.aigent.utils.OcrService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
 import java.time.LocalDateTime;
 import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
+@Slf4j
 @RequestMapping("/ai")
 public class AiController {
     @Resource
@@ -52,13 +56,43 @@ public class AiController {
     private CancelTokenRegistry cancelTokenRegistry;
     @Autowired
     private VideoUnderstandingService videoUnderstandingService;
+    @Autowired
+    private CachedService streamingCacheService;
     @PostMapping("/chat/cancel")
     public Result cancel(@RequestParam String chatId) {
         // 找到对应的 sink 或 subscription 取消掉
         cancelTokenRegistry.cancel(chatId);
         return Result.success();
     }
+    @GetMapping("/snapshot")
+    public ResponseEntity<StreamingSnapshotDTO> getSnapshot(
+            @RequestParam String chatId,
+            @RequestParam String messageId) {
+        StreamingSnapshotDTO dto = streamingCacheService.getSnapshotDTO(chatId, messageId);
+        if (dto == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(dto);
+    }
+    @Autowired
+    private StreamSessionRegistry streamSessionRegistry;
+    @GetMapping(value = "/resubscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<ChatResult>> resubscribe(
+            @RequestParam String chatId,
+            @RequestParam Long messageId,
+            @RequestParam(required = false, defaultValue = "0") Integer lastSeq) {
 
+        Sinks.Many<ChatResult> sink = streamSessionRegistry.get(chatId, messageId);
+        if (sink == null) {
+            return Flux.empty();
+        }
+        return sink.asFlux()
+                .filter(item -> item.getSeq() != null && item.getSeq() > lastSeq)
+                .map(item -> ServerSentEvent.builder(item).build())
+                .doFinally(signal -> {
+                    // 这里只是订阅结束，不要 remove registry
+                });
+    }
     @PostMapping(value = "/chat/async/", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ChatResult> doChatWithAppAsync(@RequestBody ChatSendReq chatSendReq,HttpServletRequest req)
     {
