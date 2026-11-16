@@ -1,6 +1,6 @@
 package com.ai.aigent.service.impl;
 
-import com.ai.aigent.entity.domin.AgentSession;
+import com.ai.aigent.entity.domain.AgentSession;
 import com.ai.aigent.mapper.AgentSessionMapper;
 import com.ai.aigent.service.AgentSessionService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;

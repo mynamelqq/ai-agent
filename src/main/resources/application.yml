@@ -1,33 +1,40 @@
 spring:
+  config:
+    import: optional:classpath:application-local.yml
   data:
     redis:
       client-name: redis-local
       database: 0
-      host: localhost
+      host: 192.168.86.1
       port: 6379
 
   rabbitmq:
-    host: localhost
+    host: 192.168.86.1
     port: 5672
     username: admin
 
     password: 123321
     virtual-host: /
+    # 发布器等待 Broker confirm；首次发布失败不记 published_at，转发失败不 ACK 原消息。
+    publisher-confirm-type: correlated
+    # mandatory + returns 用于发现交换机未将消息路由到任何队列。
+    publisher-returns: true
+    template:
+      mandatory: true
   datasource:
     mysql:
         driver-class-name: com.mysql.cj.jdbc.Driver
-        jdbc-url: jdbc:mysql://localhost:3306/love_ai?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+        jdbc-url: jdbc:mysql://192.168.86.1:3306/love_ai?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
         username: root
         password: 88559886
     postgresql:
         driver-class-name: org.postgresql.Driver
-        jdbc-url: jdbc:postgresql://192.168.86.128:5432/postgres
-        username: postgres
-        password: 123456
+        jdbc-url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/postgres}
+        username: ${POSTGRES_USERNAME:postgres}
+        password: ${POSTGRES_PASSWORD:123456}
   application:
     name: ai-gent
-  profiles:
-    active: local
+
   ai:
     mcp:
       client:
@@ -42,7 +49,7 @@ agent:
   manus:
     chat:
       provider: openai
-      model: openai/gpt-oss-120b
+      model: deepseek-v4.1-flash-1017
 
 
 

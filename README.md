@@ -188,15 +188,28 @@ cd aigent
 
 ### 2. Prepare Dependencies
 
-启动前建议准备以下基础依赖：
+应用配置统一使用 `application.yml` 和可选的本地 `application-local.yml`，不需要额外 Spring Profile。启动前准备：
 
 - JDK 21
 - Maven 3.9+
 - MySQL 8
 - PostgreSQL 15+ 并启用 `pgvector`
+- Redis
 - RabbitMQ
-- 可用的大模型 API Key / 服务端点
-- 腾讯云 COS 配置
+
+PostgreSQL 默认连接 `192.168.86.128:5432/postgres`，可通过 `POSTGRES_URL`、`POSTGRES_USERNAME`、`POSTGRES_PASSWORD` 覆盖。DashScope 向量嵌入和联网搜索需要在本地 `application-local.yml` 或环境变量中配置对应密钥。
+
+模型请求通过 `application-local.yml` 中的 OpenAI 兼容接口配置。已有用户的聊天模型名保存在数据库的 `user_setting.chat_model` 中，可在用户设置中改成接口支持的模型名。标题生成也使用这个接口。COS 上传、签名和附件读取默认启用，需在本地配置中提供有效的 COS 凭证和存储桶。
+
+PowerShell 示例：
+
+```powershell
+$env:POSTGRES_URL = 'jdbc:postgresql://192.168.86.128:5432/postgres'
+$env:POSTGRES_USERNAME = 'postgres'
+$env:POSTGRES_PASSWORD = 'your-postgres-password'
+.\mvnw.cmd spring-boot:run
+```
+
 
 ### 3. Copy Example Config
 

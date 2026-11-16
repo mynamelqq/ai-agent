@@ -1,7 +1,7 @@
 package com.ai.aigent.service.impl;
 
 import cn.hutool.core.util.RandomUtil;
-import com.ai.aigent.entity.domin.AnonymousUser;
+import com.ai.aigent.entity.domain.AnonymousUser;
 import com.ai.aigent.mapper.AnonymousUserMapper;
 import com.ai.aigent.service.AnonymousUserService;
 import com.ai.aigent.service.UserSettingService;

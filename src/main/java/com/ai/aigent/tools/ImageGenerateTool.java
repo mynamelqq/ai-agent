@@ -1,7 +1,7 @@
 package com.ai.aigent.tools;
 
 import cn.hutool.core.util.RandomUtil;
-import com.ai.aigent.entity.domin.Image;
+import com.ai.aigent.entity.domain.Image;
 import com.ai.aigent.service.ImageService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ToolContext;

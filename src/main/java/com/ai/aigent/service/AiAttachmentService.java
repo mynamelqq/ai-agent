@@ -1,6 +1,6 @@
 package com.ai.aigent.service;
 
-import com.ai.aigent.entity.domin.AiAttachment;
+import com.ai.aigent.entity.domain.AiAttachment;
 import com.ai.aigent.entity.dto.UploadFileDTO;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.springframework.web.multipart.MultipartFile;

@@ -2,7 +2,7 @@ package com.ai.aigent.service.impl;
 
 import cn.hutool.json.JSONUtil;
 import com.ai.aigent.agent.model.AgentMessagePayload;
-import com.ai.aigent.entity.domin.AgentMessage;
+import com.ai.aigent.entity.domain.AgentMessage;
 import com.ai.aigent.mapper.AgentMessageMapper;
 import com.ai.aigent.service.AgentMessageService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;

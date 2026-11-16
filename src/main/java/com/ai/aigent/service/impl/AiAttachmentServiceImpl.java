@@ -1,7 +1,7 @@
 package com.ai.aigent.service.impl;
 
 import com.ai.aigent.constant.AiCientConstans;
-import com.ai.aigent.entity.domin.AiAttachment;
+import com.ai.aigent.entity.domain.AiAttachment;
 import com.ai.aigent.entity.dto.UploadFileDTO;
 import com.ai.aigent.mapper.AiAttachmentMapper;
 import com.ai.aigent.service.AiAttachmentService;
@@ -52,6 +52,8 @@ public class AiAttachmentServiceImpl extends ServiceImpl<AiAttachmentMapper, AiA
     private static final int VECTOR_BATCH_SIZE = 10;
      @Value("${cos.bucket}")
     private String bucket;
+     @Value("${app.cos-enabled:true}")
+    private boolean cosEnabled;
      @Autowired
     private COSClient cosClient;
      @Autowired
@@ -60,6 +62,7 @@ public class AiAttachmentServiceImpl extends ServiceImpl<AiAttachmentMapper, AiA
     @Qualifier("attachmentVectorStore")
     private VectorStore attachmentVectorStore;
     public String uploadFile(MultipartFile file) throws IOException{
+        requireCosEnabled();
         String ext = FilenameUtils.getExtension(file.getOriginalFilename());
         String key = "chat/" + UUID.randomUUID() + "." + ext;
         // 元数据
@@ -74,6 +77,7 @@ public class AiAttachmentServiceImpl extends ServiceImpl<AiAttachmentMapper, AiA
 
      @Transactional
      public AiAttachment uploadFileInChat(MultipartFile file, UploadFileDTO dto) throws IOException {
+        requireCosEnabled();
 
         // 生成文件 key
         String ext = FilenameUtils.getExtension(file.getOriginalFilename());
@@ -101,6 +105,7 @@ public class AiAttachmentServiceImpl extends ServiceImpl<AiAttachmentMapper, AiA
     }
      @Async
     public void asyncEmbedding(AiAttachment att) {
+        requireCosEnabled();
         String url = att.getFileUrl();
             String s = ".myqcloud.com/";
             String key = url.substring(url.indexOf(s) + s.length());
@@ -131,6 +136,11 @@ public class AiAttachmentServiceImpl extends ServiceImpl<AiAttachmentMapper, AiA
                 log.debug("Attachment embedding done, fileId=" + att.getId() + ", chunks=" + allDocs.size());
         } catch (Exception e) {
             log.error("Attachment embedding failed, fileId=" + att.getId() + ", key=" + key, e);
+        }
+    }
+    private void requireCosEnabled() {
+        if (!cosEnabled) {
+            throw new IllegalStateException("COS attachments are disabled by app.cos-enabled=false");
         }
     }
     private List<String> splitSmart(String text, int chunkSize, int overlap) {

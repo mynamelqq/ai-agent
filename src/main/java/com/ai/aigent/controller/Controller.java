@@ -6,7 +6,7 @@ import com.ai.aigent.constant.ExecErrorType;
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.VO.AttachmentVO;
 import com.ai.aigent.entity.VO.ChatMessageVO;
-import com.ai.aigent.entity.domin.*;
+import com.ai.aigent.entity.domain.*;
 import com.ai.aigent.exception.BusinessException;
 import com.ai.aigent.service.*;
 import com.ai.aigent.utils.KryoUtils;

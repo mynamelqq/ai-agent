@@ -18,7 +18,7 @@ public abstract class ReActAgent extends BaseAgent {
                 if (think()) return act();
                 return "思考完成-无需行动";
             } catch (Exception e) {
-                return "步骤执行失败：" + e.getMessage();
+                throw new IllegalStateException("步骤执行失败：" + e.getMessage(), e);
             }
     }
 }

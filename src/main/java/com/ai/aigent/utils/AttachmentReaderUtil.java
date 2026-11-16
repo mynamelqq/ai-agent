@@ -2,7 +2,7 @@ package com.ai.aigent.utils;
 
 import com.ai.aigent.constant.AiConstants;
 import com.ai.aigent.demo.image.VisionPerception;
-import com.ai.aigent.entity.domin.AiAttachment;
+import com.ai.aigent.entity.domain.AiAttachment;
 import com.ai.aigent.entity.dto.VideoUnderstandReq;
 import com.ai.aigent.service.AiAttachmentService;
 import com.ai.aigent.service.VideoUnderstandingService;
@@ -27,6 +27,7 @@ import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -38,6 +39,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class AttachmentReaderUtil {
+    @Value("${app.cos-enabled:true}")
+    private boolean cosEnabled;
     @Autowired
     private COSClient cosClient;
     public static final long SMALL_FILE_LIMIT = 100 * 1024;
@@ -65,6 +68,7 @@ public class AttachmentReaderUtil {
         return chunks;
     }
     public COSObject getObject(String bucketName, String url) {
+        requireCosEnabled();
         String key = url.substring(url.indexOf(AiConstants.suffix_url) + AiConstants.suffix_url.length());
         return cosClient.getObject(bucketName, key);
     }
@@ -73,6 +77,7 @@ public class AttachmentReaderUtil {
     }
 
     public String readContent(AiAttachment attachment, String userQuery) {
+        requireCosEnabled();
         String url = attachment.getFileUrl();
         String key = url.substring(url.indexOf(AiConstants.suffix_url) + AiConstants.suffix_url.length());
         String fileType = attachment.getFileType();
@@ -125,6 +130,12 @@ public class AttachmentReaderUtil {
             content.append("\n---\n").append(document.getText());
         }
         return content.toString();
+    }
+
+    private void requireCosEnabled() {
+        if (!cosEnabled) {
+            throw new IllegalStateException("COS attachments are disabled by app.cos-enabled=false");
+        }
     }
 
     private List<Document> retrieveRelevantChunks(AiAttachment attachment, String userQuery) {

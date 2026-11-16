@@ -4,12 +4,11 @@ import com.ai.aigent.app.CancelTokenRegistry;
 import com.ai.aigent.app.SpringAiCode;
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.VO.ChatResult;
-import com.ai.aigent.entity.domin.AnonymousUser;
-import com.ai.aigent.entity.domin.Conversation;
+import com.ai.aigent.entity.domain.AnonymousUser;
+import com.ai.aigent.entity.domain.Conversation;
 import com.ai.aigent.entity.dto.*;
 import com.ai.aigent.service.*;
 import com.ai.aigent.service.impl.CachedService;
-import com.ai.aigent.service.impl.StreamSessionRegistry;
 import com.ai.aigent.utils.CosyVoiceTtsService;
 import com.ai.aigent.utils.JWTUtils;
 import com.ai.aigent.utils.OcrService;
@@ -27,8 +26,11 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Sinks;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -65,7 +67,7 @@ public class AiController {
         return Result.success();
     }
     @GetMapping("/snapshot")
-    public ResponseEntity<StreamingSnapshotDTO> getSnapshot(
+    public ResponseEntity<StreamingSnapshotDTO> getSnapshot(//拿当前生成的快照
             @RequestParam String chatId,
             @RequestParam String messageId) {
         StreamingSnapshotDTO dto = streamingCacheService.getSnapshotDTO(chatId, messageId);
@@ -74,24 +76,27 @@ public class AiController {
         }
         return ResponseEntity.ok(dto);
     }
-    @Autowired
-    private StreamSessionRegistry streamSessionRegistry;
     @GetMapping(value = "/resubscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<ChatResult>> resubscribe(
             @RequestParam String chatId,
             @RequestParam Long messageId,
             @RequestParam(required = false, defaultValue = "0") Integer lastSeq) {
 
-        Sinks.Many<ChatResult> sink = streamSessionRegistry.get(chatId, messageId);
-        if (sink == null) {
-            return Flux.empty();
-        }
-        return sink.asFlux()
-                .filter(item -> item.getSeq() != null && item.getSeq() > lastSeq)
-                .map(item -> ServerSentEvent.builder(item).build())
-                .doFinally(signal -> {
-                    // 这里只是订阅结束，不要 remove registry
-                });
+        return Flux.defer(() -> {
+            AtomicInteger cursor = new AtomicInteger(Math.max(0, lastSeq));
+            return Flux.interval(Duration.ZERO, Duration.ofMillis(200))//
+                    .concatMap(tick -> Mono.fromCallable(() -> streamingCacheService.getEventsAfter(
+                                    chatId, messageId.toString(), cursor.get()))
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .flatMapMany(Flux::fromIterable))
+                    .doOnNext(event -> cursor.set(event.getSeq()))
+                    .map(event -> ServerSentEvent.<ChatResult>builder(event)
+                            .id(String.valueOf(event.getSeq())).build())
+                    .takeUntil(event -> {
+                        String type = event.data().getEventType();//takeuntil连接最终结束到收到done以后
+                        return "done".equals(type) || "error".equals(type) || "cancelled".equals(type);
+                    });
+        });
     }
     @PostMapping(value = "/chat/async/", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ChatResult> doChatWithAppAsync(@RequestBody ChatSendReq chatSendReq,HttpServletRequest req)

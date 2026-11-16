@@ -1,7 +1,7 @@
 package com.ai.aigent.service;
 
 import com.ai.aigent.agent.model.AgentMessagePayload;
-import com.ai.aigent.entity.domin.AgentMessage;
+import com.ai.aigent.entity.domain.AgentMessage;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**

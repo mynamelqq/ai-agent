@@ -1,6 +1,6 @@
 package com.ai.aigent.mapper;
 
-import com.ai.aigent.entity.domin.UserSetting;
+import com.ai.aigent.entity.domain.UserSetting;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 /**

@@ -1,7 +1,7 @@
 package com.ai.aigent.service;
 
 import com.ai.aigent.entity.VO.NotificationVO;
-import com.ai.aigent.entity.domin.Notification;
+import com.ai.aigent.entity.domain.Notification;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.IService;
 

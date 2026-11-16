@@ -9,9 +9,9 @@ import com.ai.aigent.advisor.SummaryMemoryAdvisor;
 import com.ai.aigent.advisor.VectorStoreMemoryAdvisor;
 import com.ai.aigent.constant.AiConstants;
 import com.ai.aigent.entity.VO.ChatResult;
-import com.ai.aigent.entity.domin.AiAttachment;
-import com.ai.aigent.entity.domin.ChatMessage;
-import com.ai.aigent.entity.domin.UserSetting;
+import com.ai.aigent.entity.domain.AiAttachment;
+import com.ai.aigent.entity.domain.ChatMessage;
+import com.ai.aigent.entity.domain.UserSetting;
 import com.ai.aigent.entity.dto.ChatEmbeddingDTO;
 import com.ai.aigent.entity.dto.ChatSendReq;
 import com.ai.aigent.entity.dto.RegenDTO;
@@ -25,7 +25,6 @@ import com.ai.aigent.tools.WebSearchTool;
 import com.ai.aigent.utils.AttachmentReaderUtil;
 import com.ai.aigent.utils.KryoUtils;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
-import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qcloud.cos.model.COSObject;
 import jakarta.annotation.Resource;
@@ -50,7 +49,7 @@ import org.springframework.ai.zhipuai.api.ZhiPuAiApi;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,7 +68,6 @@ import reactor.util.concurrent.Queues;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -118,6 +116,8 @@ public class SpringAiCode {
 //    @Resource
 //    private OllamaChatModel ollamaChatModel;
     public OpenAiChatModel openAiChatModel;
+    @Value("${app.cos-enabled:true}")
+    private boolean cosEnabled;
     private OpenAiChatOptions.Builder chatOptionsBuilder;
     @Resource
     @Qualifier("zhiPuAiChatModel")
@@ -141,6 +141,7 @@ public class SpringAiCode {
         this.chatMemory=chatMemory;
         this.summaryMemoryAdvisor = summaryMemoryAdvisor;
         this.vectorStoreMemoryAdvisor=vectorStoreMemoryAdvisor;
+        this.openAiChatModel = openAiChatModel;
         chatClientBuilder = ChatClient.builder(openAiChatModel).defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build(), new MySimpleLoggerAdvisor());
 //        InputStream resourceAsStream = this.getClass().getResourceAsStream("/forbiddenWords.txt");
 //        List<String> forbiddenWords=new ArrayList<String>();
@@ -158,10 +159,35 @@ public class SpringAiCode {
 //        }
     }
     public String genTitle(String args)  {
-        return  zhiPuAiChatModel
-                .stream(new Prompt(ChatPrompt.titleGeneratePrompt+args))
-                .collectList().block().stream().map(response -> response.getResult().getOutput().getText())
-            .collect(Collectors.joining());
+        String fallbackTitle = args == null ? "新会话" : args.strip();
+        if (fallbackTitle.isEmpty()) {
+            fallbackTitle = "新会话";
+        }
+        if (fallbackTitle.length() > 40) {
+            fallbackTitle = fallbackTitle.substring(0, 40);
+        }
+
+        try {
+            String generatedTitle = openAiChatModel
+                    .stream(new Prompt(ChatPrompt.titleGeneratePrompt + args))
+                    .collectList()
+                    .blockOptional()
+                    .orElseGet(List::of)
+                    .stream()
+                    .filter(Objects::nonNull)
+                    .map(ChatResponse::getResult)
+                    .filter(Objects::nonNull)
+                    .map(result -> result.getOutput())
+                    .filter(Objects::nonNull)
+                    .map(message -> message.getText())
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.joining())
+                    .strip();
+            return generatedTitle.isEmpty() ? fallbackTitle : generatedTitle;
+        } catch (RuntimeException e) {
+            log.warn("生成会话标题失败，使用用户消息作为标题: {}", e.getMessage());
+            return fallbackTitle;
+        }
     }
     @Autowired
     private WebSearchTool webSearchTool;
@@ -179,7 +205,6 @@ public class SpringAiCode {
     private RabbitTemplate rabbitTemplate;
     @Autowired
     private CachedService cachedService;
-    @Transactional
    public Flux<ChatResult> doChatStream(ChatSendReq chatSendReq, String userId, String type) {
         String chatId = chatSendReq.getChatId();
         Long messageId = Long.parseLong(chatSendReq.getMessageId());
@@ -199,10 +224,11 @@ public class SpringAiCode {
          setting= userSettingService.getByUserId(userId,type);
          if(setting!=null){
              chatOptionsBuilder.temperature(setting.getTemperature())
+
 //                     .maxCompletionTokens(setting.getMaxTokens())
                      .frequencyPenalty(setting.getFrequencyPenalty())
 //                         .topK(setting.getTopk())
-                     .model(setting.getChatModel());//maxTokens
+                     .model("qwen3.8-27b");//maxTokens
 //             if(supportsReasoning(setting.getChatModel())){
 //                 chatOptionsBuilder.maxCompletionTokens(setting.getMaxTokens());
 //             }
@@ -235,15 +261,15 @@ public class SpringAiCode {
         } else if (Boolean.TRUE.equals(chatSendReq.getIsSearch())) {
             localToolCallbacks = ToolCallbacks.from(webSearchTool,webScrapingTool);
         } else if (Boolean.TRUE.equals(chatSendReq.getIsGenerateFile())) {
-            localToolCallbacks = ToolCallbacks.from(fileOperationTool,webSearchTool);
+            localToolCallbacks = cosEnabled
+                    ? ToolCallbacks.from(fileOperationTool,webSearchTool)
+                    : ToolCallbacks.from(webSearchTool);
         } else {
             localToolCallbacks = ToolCallbacks.from(webScrapingTool);
         }
         // 4️⃣ 先存用户消息
         chatMessageService.saveMessage(chatSendReq);
-        Long assistantId= RandomUtil.randomLong(0,10000000000L);
-        chatMessageService.saveAssistantMessage(assistantId.toString(),chatId,"",0,0,0,0,0,0L);
-        // 提到外面，生命周期清晰
+       // 提到外面，生命周期清晰
         StringBuilder full = new StringBuilder();
         StringBuilder reasoningContent = new StringBuilder();
         List<Media> mediaList = new ArrayList<>();
@@ -258,7 +284,6 @@ public class SpringAiCode {
         AtomicReference<Integer> cached_tokens = new AtomicReference<>(0);
         AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
-        AtomicReference<Long>id=new AtomicReference<>(assistantId);
         StreamTextParseState wrappedTextState = new StreamTextParseState();
         // 5️⃣ 响应式读取附件
         Mono<String> attachmentMono = Mono.fromCallable(() -> {
@@ -283,6 +308,15 @@ public class SpringAiCode {
             }
             return attachmentContent.toString();
         }).subscribeOn(Schedulers.boundedElastic());
+        Long assistantId= RandomUtil.randomLong(0L, (long) 1e18);
+        chatMessageService.saveAssistantMessage(assistantId.toString(),chatId,"",0,0,0,0,0,0L);
+        AtomicReference<Long>id=new AtomicReference<>(assistantId);
+        cachedService.delete(chatId, assistantId.toString());//清理缓存
+        cachedService.save(chatId, assistantId.toString(), "", "", 0, "streaming");//保存空的缓存
+        ChatResult startEvent = new ChatResult();
+        startEvent.setEventType("start");
+        startEvent.setMessageId(assistantId.toString());
+        startEvent.setSeq(0);
         // 6️⃣ system prompt
         String system = chatSendReq.getIsEcharts()
                 ? SystemPrompt.ECHARTS_SYSTEM_PROMPT
@@ -300,7 +334,6 @@ public class SpringAiCode {
         String finalSystem = system;
         Disposable disposable = attachmentMono.<ChatResponse>flatMapMany(attachmentContent -> {
             var promptBuilder = chatClient.prompt().options(chatOptionsBuilder.build())
-
                     .user(promptUserSpec -> promptUserSpec
                             .text(message)
                             .media(mediaList.toArray(new Media[0])))
@@ -323,7 +356,6 @@ public class SpringAiCode {
                     .chatResponse();
         })
         .doOnError(throwable -> log.error("AI流异常: {}", throwable.getMessage()))
-        .onErrorContinue((throwable, o) -> log.error("AI流异常跳过: {}", throwable.getMessage()))
         .switchIfEmpty(Flux.error(new RuntimeException("AI 响应失败")))
         .doOnNext(chatResponse -> {
             try {
@@ -335,6 +367,7 @@ public class SpringAiCode {
                 var result = chatResponse.getResult();
                 if(result==null)return;
                 var msg = result.getOutput();
+                if (msg == null) return;
                 String metadataReasoning = Optional.ofNullable(msg.getMetadata())
                         .map(meta -> meta.get("reasoningContent"))
                         .map(Object::toString)
@@ -376,12 +409,14 @@ public class SpringAiCode {
                 );
                 // 构建并推入 sink
                 ChatResult chatResult = new ChatResult();
-                chatResult.setSeq(seq.get());
+                chatResult.setSeq(currentSeq);
+                chatResult.setEventType("chunk");
+                chatResult.setMessageId(assistantId.toString());
                 chatResult.setReasoning(metadataReasoning + parsedTextChunk.reasoning());
                 if (!parsedTextChunk.text().isEmpty()) {
                     chatResult.setText(parsedTextChunk.text());
                 }
-                sink.tryEmitNext(chatResult);
+                publishStreamEvent(chatId, assistantId, sink, chatResult);
             } catch (Throwable e) {
                 log.error("解析 chatResponse 时发生异常", e);
             }
@@ -399,13 +434,20 @@ public class SpringAiCode {
                     thinkingEndTime.set(System.currentTimeMillis());
                 }
                 full.append(tailChunk.text());
+            }
+            if (!tailChunk.text().isEmpty() || !tailChunk.reasoning().isEmpty()) {
                 ChatResult chatResult = new ChatResult();
+                chatResult.setSeq(seq.incrementAndGet());
+                chatResult.setEventType("chunk");
+                chatResult.setMessageId(assistantId.toString());
                 chatResult.setText(tailChunk.text());
-                sink.tryEmitNext(chatResult);
+                chatResult.setReasoning(tailChunk.reasoning());
+                publishStreamEvent(chatId, assistantId, sink, chatResult);
+                cachedService.save(chatId, assistantId.toString(), full.toString(), reasoningContent.toString(), seq.get(), "streaming");
             }
             endTime.set(System.currentTimeMillis());
             Usage usage = finalUsage.get();
-            if (usage == null) return;
+            if (usage != null) {
             if (usage.getPromptTokens() != null) prompt_tokens.set(usage.getPromptTokens());
             if (usage.getCompletionTokens() != null) completion_tokens.set(usage.getCompletionTokens());
             if (usage.getTotalTokens() != null) token.set(usage.getTotalTokens());
@@ -417,39 +459,45 @@ public class SpringAiCode {
                     cached_tokens.set(Integer.parseInt(detailsMap.get("cached_tokens").toString()));
                 }
             }
-            streamSessionRegistry.remove(chatId, id.get());
-            cachedService.markDone(chatId,id.get().toString(),full.toString(),reasoningContent.toString());
+            }
         })
         .doFinally(signal -> {
             String finalAnswer = buildFinalAnswer(reasoningContent, full);
             if (signal == SignalType.ON_COMPLETE) {
-                // 正常跑完：保存完整内容
-                if (!finalAnswer.isEmpty()) {
-                    if(setting!=null&&setting.getChatMemory()){
-                        ChatEmbeddingDTO dto = new ChatEmbeddingDTO();
-                        dto.setUserId(userId);
-                        dto.setChatId(chatId);
-                        dto.setUserMessage(message);
-                        dto.setMemoryType("chat");
-                        dto.setAssistantMessage(full.toString());
-                        rabbitTemplate.convertAndSend(
-                                "ChatVectorStoreExchange",
-                                "ChatVectorStore",
-                                JSONUtil.toJsonStr(dto)
-                        );
-                    }
+                try {
+                    // 数据库持久化成功后，才发布可观察到的 done 状态。
                     saveAndRecord(id.get(),chatId, userId, type, finalAnswer, token,
                             prompt_tokens, completion_tokens, cached_tokens, startTime, endTime,
                             (thinkingEndTime.get()-thinkingStartTime.get()),(setting!=null?setting.getChatModel():""));
+                    if (!finalAnswer.isEmpty() && setting!=null&&setting.getChatMemory()){
+                            ChatEmbeddingDTO dto = new ChatEmbeddingDTO();
+                            dto.setUserId(userId);
+                            dto.setChatId(chatId);
+                            dto.setUserMessage(message);
+                            dto.setMemoryType("chat");
+                            dto.setAssistantMessage(full.toString());
+                            try {
+                                rabbitTemplate.convertAndSend("ChatVectorStoreExchange", "ChatVectorStore", JSONUtil.toJsonStr(dto));
+                            } catch (Exception e) {
+                                log.warn("向量记忆投递失败，chatId={}", chatId, e);
+                            }
+                    }
+                    cachedService.markDone(chatId,id.get().toString(),full.toString(),reasoningContent.toString());
+                    publishTerminalEvent(chatId, id.get(), sink, seq, "done");
+                } catch (Exception e) {
+                    log.error("保存完成状态失败，chatId={}", chatId, e);
+                    publishErrorState(chatId, id.get(), sink, seq, full, reasoningContent);
+                } finally {
+                    streamSessionRegistry.remove(chatId, id.get());
+                    sink.tryEmitComplete();
                 }
-                sink.tryEmitComplete();
 
             } else if (signal == SignalType.CANCEL) {
                 if (cancelTokenRegistry.isCancelled(chatId)) {
                     endTime.set(System.currentTimeMillis());
                     Usage usage = finalUsage.get();
                     thinkingEndTime.set(System.currentTimeMillis());
-                    if (usage == null) return;
+                    if (usage != null) {
                     if (usage.getPromptTokens() != null) prompt_tokens.set(usage.getPromptTokens());
                     if (usage.getCompletionTokens() != null) completion_tokens.set(usage.getCompletionTokens());
                     if (usage.getTotalTokens() != null) token.set(usage.getTotalTokens());
@@ -461,6 +509,7 @@ public class SpringAiCode {
                             cached_tokens.set(Integer.parseInt(detailsMap.get("cached_tokens").toString()));
                         }
                     }
+                    }
                     // 主动取消：保存已有内容
                     cancelTokenRegistry.clear(chatId);
                     if (!finalAnswer.isEmpty()) {
@@ -468,18 +517,23 @@ public class SpringAiCode {
                                 prompt_tokens, completion_tokens, cached_tokens, startTime,
                                 endTime,(thinkingEndTime.get()-thinkingStartTime.get()),(setting!=null?setting.getChatModel():"qwq-plus"));
                     }
+                    cachedService.markCancelled(chatId,id.get().toString(),full.toString(),reasoningContent.toString());
+                    publishTerminalEvent(chatId, id.get(), sink, seq, "cancelled");
+                    streamSessionRegistry.remove(chatId, id.get());
                     sink.tryEmitComplete();
                 }
                 // 被动断开（SSE 断开）：不处理，流继续跑到 ON_COMPLETE
             } else {
                 log.warn("AI 流未正常完成，signal={}", signal);
+                publishErrorState(chatId, id.get(), sink, seq, full, reasoningContent);
+                streamSessionRegistry.remove(chatId, id.get());
                 sink.tryEmitComplete();
             }
         })
         .subscribeOn(Schedulers.boundedElastic())
-        .subscribe(); // 独立订阅，脱离 SSE 生命周期
+        .subscribe(ignored -> {}, error -> log.debug("AI 流异常已由 doOnError 记录: {}", error.toString())); // 独立订阅，脱离 SSE 生命周期
         cancelTokenRegistry.register(chatId, disposable);
-        return Flux.concat(prefixFlux, sink.asFlux())
+        return Flux.concat(Flux.just(startEvent), prefixFlux, sink.asFlux())
                 .onErrorResume(e -> {
                     log.error("SSE 流异常", e);
                     return Flux.empty();
@@ -487,6 +541,30 @@ public class SpringAiCode {
     }
     @Autowired
     private CancelTokenRegistry cancelTokenRegistry;
+
+    private void publishStreamEvent(String chatId, Long assistantId, Sinks.Many<ChatResult> sink, ChatResult event) {
+        cachedService.saveEvent(chatId, assistantId.toString(), event);
+        sink.tryEmitNext(event);
+    }
+
+    private void publishTerminalEvent(String chatId, Long assistantId, Sinks.Many<ChatResult> sink,
+                                      AtomicInteger seq, String eventType) {
+        ChatResult event = new ChatResult();
+        event.setEventType(eventType);
+        event.setMessageId(assistantId.toString());
+        event.setSeq(seq.incrementAndGet());
+        publishStreamEvent(chatId, assistantId, sink, event);
+    }
+
+    private void publishErrorState(String chatId, Long assistantId, Sinks.Many<ChatResult> sink,
+                                   AtomicInteger seq, StringBuilder full, StringBuilder reasoning) {
+        try {
+            cachedService.save(chatId, assistantId.toString(), full.toString(), reasoning.toString(), seq.get(), "error");
+            publishTerminalEvent(chatId, assistantId, sink, seq, "error");
+        } catch (Exception e) {
+            log.error("发布流式错误状态失败，chatId={}", chatId, e);
+        }
+    }
 
     static ParsedTextChunk parseStreamTextChunk(StreamTextParseState state, String chunk, boolean allowWrappedReasoningDetection) {
         if (chunk == null || chunk.isEmpty()) {
@@ -740,7 +818,9 @@ public class SpringAiCode {
         } else if (Boolean.TRUE.equals(chatMessage.getIsSearch())) {
             localToolCallbacks = ToolCallbacks.from(webSearchTool,webScrapingTool);
         } else if (Boolean.TRUE.equals(chatMessage.getIsGenerate())) {
-            localToolCallbacks = ToolCallbacks.from(fileOperationTool,webSearchTool);
+            localToolCallbacks = cosEnabled
+                    ? ToolCallbacks.from(fileOperationTool,webSearchTool)
+                    : ToolCallbacks.from(webSearchTool);
         } else {
             localToolCallbacks = ToolCallbacks.from(webScrapingTool);
         }
@@ -795,6 +875,12 @@ public class SpringAiCode {
 
         Sinks.Many<ChatResult> sink = Sinks.many().multicast().onBackpressureBuffer();
         streamSessionRegistry.register(chatId, assistantMessageId, sink);
+        cachedService.delete(chatId, assistantMessageId.toString());
+        cachedService.save(chatId, assistantMessageId.toString(), "", "", 0, "streaming");
+        ChatResult startEvent = new ChatResult();
+        startEvent.setEventType("start");
+        startEvent.setMessageId(assistantMessageId.toString());
+        startEvent.setSeq(0);
         Map<String, Object> toolContext = Map.of("chatId", chatId,"userId",userId);
         String finalSystem = system;
 
@@ -824,7 +910,6 @@ public class SpringAiCode {
                     .chatResponse();
         })
                 .doOnError(throwable -> log.error("AI流异常: {}", throwable.getMessage()))
-                .onErrorContinue((throwable, o) -> log.error("AI流异常跳过: {}", throwable.getMessage()))
                 .switchIfEmpty(Flux.error(new RuntimeException("AI 响应失败")))
                 .doOnNext(chatResponse -> {
                     try {
@@ -836,6 +921,7 @@ public class SpringAiCode {
                         var result = chatResponse.getResult();
                         if (result == null) return;
                         var msg = result.getOutput();
+                        if (msg == null) return;
                         int currentSeq = seq.incrementAndGet();
                         String metadataReasoning = Optional.ofNullable(msg.getMetadata())
                                 .map(meta -> meta.get("reasoningContent"))
@@ -877,11 +963,13 @@ public class SpringAiCode {
                         );
                         ChatResult chatResult = new ChatResult();
                         chatResult.setSeq(currentSeq);
+                        chatResult.setEventType("chunk");
+                        chatResult.setMessageId(assistantMessageId.toString());
                         chatResult.setReasoning(metadataReasoning + parsedTextChunk.reasoning());
                         if (!parsedTextChunk.text().isEmpty()) {
                             chatResult.setText(parsedTextChunk.text());
                         }
-                        sink.tryEmitNext(chatResult);
+                        publishStreamEvent(chatId, assistantMessageId, sink, chatResult);
                     } catch (Throwable e) {
                         log.error("解析 chatResponse 时发生异常", e);
                     }
@@ -897,13 +985,20 @@ public class SpringAiCode {
                             thinkingEndTime.set(System.currentTimeMillis());
                         }
                         full.append(tailChunk.text());
+                    }
+                    if (!tailChunk.text().isEmpty() || !tailChunk.reasoning().isEmpty()) {
                         ChatResult chatResult = new ChatResult();
+                        chatResult.setSeq(seq.incrementAndGet());
+                        chatResult.setEventType("chunk");
+                        chatResult.setMessageId(assistantMessageId.toString());
                         chatResult.setText(tailChunk.text());
-                        sink.tryEmitNext(chatResult);
+                        chatResult.setReasoning(tailChunk.reasoning());
+                        publishStreamEvent(chatId, assistantMessageId, sink, chatResult);
+                        cachedService.save(chatId, assistantMessageId.toString(), full.toString(), reasoningContent.toString(), seq.get(), "streaming");
                     }
                     endTime.set(System.currentTimeMillis());
                     Usage usage = finalUsage.get();
-                    if (usage == null) return;
+                    if (usage != null) {
                     if (usage.getPromptTokens() != null) prompt_tokens.set(usage.getPromptTokens());
                     if (usage.getCompletionTokens() != null) completion_tokens.set(usage.getCompletionTokens());
                     if (usage.getTotalTokens() != null) token.set(usage.getTotalTokens());
@@ -915,25 +1010,31 @@ public class SpringAiCode {
                             cached_tokens.set(Integer.parseInt(detailsMap.get("cached_tokens").toString()));
                         }
                     }
-                    streamSessionRegistry.remove(chatId, assistantMessageId);
-                    cachedService.markDone(chatId,id.get().toString(), full.toString(), reasoningContent.toString());
+                    }
                 })
                 .doFinally(signal -> {
                     String finalAnswer = buildFinalAnswer(reasoningContent, full);
                     String model = finalSetting != null ? finalSetting.getChatModel() : "";
                     if (signal == SignalType.ON_COMPLETE) {
-                        if (!finalAnswer.isEmpty()) {
-                            saveAndRecord(id.get(), chatId, userId, type, finalAnswer, token,
-                                    prompt_tokens, completion_tokens, cached_tokens, startTime, endTime,
-                                    (thinkingEndTime.get() - thinkingStartTime.get()), model);
+                        try {
+                        saveAndRecord(id.get(), chatId, userId, type, finalAnswer, token,
+                                prompt_tokens, completion_tokens, cached_tokens, startTime, endTime,
+                                (thinkingEndTime.get() - thinkingStartTime.get()), model);
+                            cachedService.markDone(chatId,id.get().toString(), full.toString(), reasoningContent.toString());
+                            publishTerminalEvent(chatId, assistantMessageId, sink, seq, "done");
+                        } catch (Exception e) {
+                            log.error("保存重新生成完成状态失败，chatId={}", chatId, e);
+                            publishErrorState(chatId, assistantMessageId, sink, seq, full, reasoningContent);
+                        } finally {
+                            streamSessionRegistry.remove(chatId, assistantMessageId);
+                            sink.tryEmitComplete();
                         }
-                        sink.tryEmitComplete();
                     } else if (signal == SignalType.CANCEL) {
                         if (cancelTokenRegistry.isCancelled(chatId)) {
                             endTime.set(System.currentTimeMillis());
                             thinkingEndTime.set(System.currentTimeMillis());
                             Usage usage = finalUsage.get();
-                            if (usage == null) return;
+                            if (usage != null) {
                             if (usage.getPromptTokens() != null) prompt_tokens.set(usage.getPromptTokens());
                             if (usage.getCompletionTokens() != null) completion_tokens.set(usage.getCompletionTokens());
                             if (usage.getTotalTokens() != null) token.set(usage.getTotalTokens());
@@ -945,24 +1046,30 @@ public class SpringAiCode {
                                     cached_tokens.set(Integer.parseInt(detailsMap.get("cached_tokens").toString()));
                                 }
                             }
+                            }
                             cancelTokenRegistry.clear(chatId);
                             if (!finalAnswer.isEmpty()) {
                                 saveAndRecord(id.get(), chatId, userId, type, finalAnswer, token,
                                         prompt_tokens, completion_tokens, cached_tokens, startTime, endTime,
                                         (thinkingEndTime.get() - thinkingStartTime.get()), model);
                             }
+                            cachedService.markCancelled(chatId,id.get().toString(), full.toString(), reasoningContent.toString());
+                            publishTerminalEvent(chatId, assistantMessageId, sink, seq, "cancelled");
+                            streamSessionRegistry.remove(chatId, assistantMessageId);
                             sink.tryEmitComplete();
                         }
                     } else {
                         log.warn("AI 流未正常完成，signal={}", signal);
+                        publishErrorState(chatId, assistantMessageId, sink, seq, full, reasoningContent);
+                        streamSessionRegistry.remove(chatId, assistantMessageId);
                         sink.tryEmitComplete();
                     }
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .subscribe();
+                .subscribe(ignored -> {}, error -> log.debug("AI 流异常已由 doOnError 记录: {}", error.toString()));
 
         cancelTokenRegistry.register(chatId, disposable);
-        return Flux.concat(prefixFlux, sink.asFlux())
+        return Flux.concat(Flux.just(startEvent), prefixFlux, sink.asFlux())
                 .onErrorResume(e -> {
                     log.error("SSE 流异常", e);
                     return Flux.empty();

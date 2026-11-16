@@ -5,7 +5,7 @@ import com.ai.aigent.agent.model.AgentEvent;
 import com.ai.aigent.agent.model.AgentSessionRegistry;
 import com.ai.aigent.agent.model.AgentState;
 import com.ai.aigent.constant.AiConstants;
-import com.ai.aigent.entity.domin.AiAttachment;
+import com.ai.aigent.entity.domain.AiAttachment;
 import com.ai.aigent.service.AgentMessageService;
 import com.ai.aigent.service.AgentSessionService;
 import com.ai.aigent.service.AiAttachmentService;
@@ -58,7 +58,6 @@ public abstract class BaseAgent {
     private  AgentSessionService agentSessionService;
     private List<Message>messageList=new ArrayList<>();
     protected void emit(AgentEvent event) {
-        if (agentState == AgentState.FINISHED) return; // 已结束不发
         try {
             emitter.send(SseEmitter.event()
                     .name(event.getType())
@@ -93,10 +92,7 @@ public abstract class BaseAgent {
      public SseEmitter agentRun(String userPrompt, String sessionId, List<Long>attachments, String userId) {
         initializeRunState(sessionId, userId);
         emitter = new SseEmitter(1000 * 60 * 8L);
-        agentSessionRegistry.register(sessionId, this);
-        emitter.onCompletion(() -> agentSessionRegistry.remove(sessionId));
         emitter.onTimeout(() -> {
-            agentSessionRegistry.remove(sessionId);
             cancel(); // 超时也取消后台流
         });
         CompletableFuture.runAsync(() -> {
@@ -112,24 +108,29 @@ public abstract class BaseAgent {
                 }
                 this.getMessageList().add(new SystemMessage(buildRuntimeSystemPrompt()));
                 this.getMessageList().add(new UserMessage(userPrompt));
-                for (int i = 0; i < maxStep && agentState != AgentState.FINISHED; i++) {
+                for (int i = 0; i < maxStep && agentState != AgentState.FINISHED && !Boolean.TRUE.equals(cancelled); i++) {
                     currentStep = i + 1;
                     emit(AgentEvent.stepStart(currentStep));//发送步骤第几
                     log.info("Executing step {}/{}", currentStep, maxStep);
                     String stepResult = step();
                     if ("思考完成-无需行动".equals(stepResult)) break;
                 }
-                if (currentStep >= maxStep) {
-                    agentState = AgentState.FINISHED;
-                    emit(new AgentEvent("warn", "已达最大步骤 " + maxStep, null));//发送超步骤警告
+                if (Boolean.TRUE.equals(cancelled)) {
+                    emit(new AgentEvent("cancelled", "任务已取消", null));
+                } else {
+                    if (currentStep >= maxStep) {
+                        agentState = AgentState.FINISHED;
+                        emit(new AgentEvent("warn", "已达最大步骤 " + maxStep, null));
+                    }
+                    emit(AgentEvent.done());
                 }
-                emit(AgentEvent.done());//发送完成a
                 emitter.complete();
             } catch (Exception e) {
                 agentState = AgentState.ERROR;
                 emit(new AgentEvent("error", e.getMessage(), null));
                 emitter.completeWithError(e);//发送错误
             } finally {
+                agentSessionRegistry.remove(sessionId, this);
                 cleanup();
             }
         }, agentExecutor);
@@ -140,7 +141,6 @@ public abstract class BaseAgent {
         this.userId = userId;
         this.currentStep = 0;
         this.currentDisposable = null;
-        this.cancelled = false;
         this.systemSuffix = null;
         this.mediaList = new ArrayList<>();
         this.messageList = new ArrayList<>();

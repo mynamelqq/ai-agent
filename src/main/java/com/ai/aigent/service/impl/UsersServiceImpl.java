@@ -1,7 +1,7 @@
 package com.ai.aigent.service.impl;
 
-import com.ai.aigent.entity.domin.AnonymousUser;
-import com.ai.aigent.entity.domin.Users;
+import com.ai.aigent.entity.domain.AnonymousUser;
+import com.ai.aigent.entity.domain.Users;
 import com.ai.aigent.mapper.UsersMapper;
 import com.ai.aigent.service.AnonymousUserService;
 import com.ai.aigent.service.UsersService;

@@ -1,6 +1,6 @@
 package com.ai.aigent.controller;
 
-import com.ai.aigent.entity.domin.AnonymousUser;
+import com.ai.aigent.entity.domain.AnonymousUser;
 import com.ai.aigent.service.AnonymousUserService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;

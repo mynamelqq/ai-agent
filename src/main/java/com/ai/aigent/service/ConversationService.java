@@ -1,6 +1,6 @@
 package com.ai.aigent.service;
 
-import com.ai.aigent.entity.domin.Conversation;
+import com.ai.aigent.entity.domain.Conversation;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**

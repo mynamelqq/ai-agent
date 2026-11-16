@@ -1,6 +1,6 @@
 package com.ai.aigent.service;
 
-import com.ai.aigent.entity.domin.Image;
+import com.ai.aigent.entity.domain.Image;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**

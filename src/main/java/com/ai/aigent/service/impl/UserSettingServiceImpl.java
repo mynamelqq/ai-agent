@@ -1,7 +1,7 @@
 package com.ai.aigent.service.impl;
 
 import com.ai.aigent.constant.AiCientConstans;
-import com.ai.aigent.entity.domin.UserSetting;
+import com.ai.aigent.entity.domain.UserSetting;
 import com.ai.aigent.mapper.UserSettingMapper;
 import com.ai.aigent.service.UserSettingService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;

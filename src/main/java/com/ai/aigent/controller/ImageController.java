@@ -1,7 +1,7 @@
 package com.ai.aigent.controller;
 
 import com.ai.aigent.constant.Result;
-import com.ai.aigent.entity.domin.Image;
+import com.ai.aigent.entity.domain.Image;
 import com.ai.aigent.service.ImageService;
 import com.ai.aigent.service.UsersService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;

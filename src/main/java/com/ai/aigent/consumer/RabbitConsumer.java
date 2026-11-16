@@ -1,11 +1,9 @@
 package com.ai.aigent.consumer;
 
-import com.ai.aigent.constant.AiCientConstans;
-import com.ai.aigent.entity.domin.ChatMessage;
-import com.ai.aigent.service.ChatMessageService;
-import com.ai.aigent.service.ChatSummaryService;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import jakarta.annotation.Resource;
+import cn.hutool.json.JSONUtil;
+import com.ai.aigent.service.impl.SummaryBatchService;
+import com.ai.aigent.utils.KryoUtils;
+import com.rabbitmq.client.Channel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -15,147 +13,133 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.openai.OpenAiChatModel;
-import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
 @Service
 @Slf4j
 public class RabbitConsumer {
-    private final static String cueWord = "你是一个对话摘要器。\n" +
-            "\n" +
-            "请将以下对话内容总结为一段“长期记忆摘要”，要求：\n" +
-            "1. 保留重要事实、用户偏好、已达成的结论\n" +
-            "2. 忽略寒暄、重复和无关信息\n" +
-            "3. 使用第三人称、陈述句\n" +
-            "4. 不要添加对话中不存在的信息\n" +
-            "5. 输出为一段连续文本，不要分点\n" +
-            "\n" +
-            "对话内容：\n" +
-            "{messages}";
+    private static final String SUMMARY_PROMPT = """
+            你是对话摘要器。只为本批新消息生成一段长期记忆摘要，保留重要事实、偏好和结论，
+            不重复已有摘要，不添加对话中不存在的信息。
+            已有长期记忆：
+            {previousSummary}
+            本批消息：
+            {messages}
+            """;
 
-    @Resource
-    @Qualifier("openAiChatModel")
-    private OpenAiChatModel openAiChatModel;
-    @Resource
-    private ChatSummaryService chatSummaryService;
-    @Resource
-    private ChatMessageService chatMessageService;
-    @RabbitListener(queues = "summaryChat")
-    @Transactional
-    public void receiveMessage(String message) {//发送id序列
-        String id=message;
-        //从数据库中查出要摘要的10条然后拼到strs中，需要加上messageType以告知是谁说的
-        List<ChatMessage> oldestMessages = chatMessageService.list(
-        Wrappers.<ChatMessage>lambdaQuery()
-            .eq(ChatMessage::getConversationId, id)
-                .eq(ChatMessage::getIsDeleted,0)
-            .orderByAsc(ChatMessage::getCreateTime)//升序排序
-            .last("LIMIT "+ AiCientConstans.SHORT_MEMORY_LENGTH)
-         );
-        if (oldestMessages.size()<AiCientConstans.SHORT_MEMORY_LENGTH) {
-            return;
-        }
-        StringBuilder strs = new StringBuilder();
+    private final OpenAiChatModel model;
+    private final SummaryBatchService batches;
+    private final SummaryPublisher publisher;
 
-       for (ChatMessage entity : oldestMessages) {
-            Message msg =chatMessageService.deserialize(entity);
-            entity.setIsDeleted(1);
-            strs.append(formatMessage(msg))
-                .append("\n");
-       }
-       chatMessageService.updateBatchById(oldestMessages);
-        PromptTemplate promptTemplate =
-                new PromptTemplate(cueWord);
-        Prompt prompt = promptTemplate.create(Map.of("messages", strs));
-        ChatResponse call = openAiChatModel.call(prompt);
-
-        chatSummaryService.updateSummary(id,call.getResult().getOutput().getText());//更新摘要
-
+    public RabbitConsumer(@Qualifier("openAiChatModel") OpenAiChatModel model,
+                          SummaryBatchService batches, SummaryPublisher publisher) {
+        this.model = model;
+        this.batches = batches;
+        this.publisher = publisher;
     }
 
-    @Resource
-    private JdbcTemplate jdbcTemplate;
-    @Resource
-    private VectorStore codeAppVectorStore;
-//    @Transactional
-//    @RabbitListener(queues = "ChatVectorStoreQueue")
-//    public void receiveMessageFromVectorStore(String  message) {
-//        ChatEmbeddingDTO dto = JSONUtil.toBean(message, ChatEmbeddingDTO.class, true);
-//         try {
-//            // 1️⃣ 拼接 Q + A（向量内容）
-//             String content = buildContent(dto.getUserMessage(), dto.getAssistantMessage());
-//            if (StringUtils.isBlank(dto.getUserId())) {
-//                dto.setUserId(RandomUtil.randomNumbers(10));
-//            }
-//            List<String> chunks = splitByTokens(content);
-//            for (String chunk : chunks) {
-//                String documentId = UUID.randomUUID().toString();
-//                Document document = new Document(documentId, chunk, Map.of());
-//                codeAppVectorStore.add(List.of(document));
-//                jdbcTemplate.update(
-//                    "insert into chat_memory_vector (id, user_id, conservation_id, memory_type, created_at, is_deleted) values (?, ?, ?, ?, now(), false)",
-//                    documentId,
-//                    Long.parseLong(dto.getUserId()),
-//                    dto.getChatId(),
-//                    dto.getMemoryType()
-//                );
-//
-//                log.info("Vector saved: userId={}, sessionId={}, documentId={}",
-//                        dto.getUserId(), dto.getChatId(), documentId);
-//            }
-//            } catch (Exception e) {
-//                log.error("ChatVectorStore 消费失败: {}", dto, e);
-//            }
-//    }
-
-    private List<String> splitByTokens(String content) {
-        List<String> chunks = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        int currentTokens = 0;
-
-        for (String line : content.split("\n")) {
-            int lineTokens = line.length();
-            if (currentTokens + lineTokens > AiCientConstans.MAX_LENGTH_EMBEDDING) {
-                chunks.add(current.toString());
-                current = new StringBuilder();
-                currentTokens = 0;
+    @RabbitListener(queues = "summaryChat", containerFactory = "summaryRabbitListenerContainerFactory")
+    public void receiveMessage(String body, Channel channel,
+                               @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
+        // 手动 ACK：只有数据库成功，或重试/失败消息确认转存后，才确认原消息。
+        try {
+            SummaryChatEvent event = parseEvent(body);
+            if (event == null) {
+                // 旧格式没有持久 batchId，无法安全地映射到固定的 10 条，先转失败队列待人工处理。
+                publisher.publishRawConfirmed(RabbitMQConfig.DEAD_EXCHANGE,
+                        RabbitMQConfig.DEAD_KEY, body, "legacy-summary");
+                channel.basicAck(deliveryTag, false);
+                return;
             }
-            current.append(line).append("\n");
-            currentTokens += lineTokens;
+
+            SummaryBatchService.Claim claim = batches.claim(event);
+            switch (claim.decision()) {
+                // 已成功的批次再次投递时不再调用模型，也不重复追加摘要。
+                case DONE -> channel.basicAck(deliveryTag, false);
+                // 前序批次尚未完成，或本批已有有效租约：延迟 30 秒再尝试。
+                case RETRY_LATER -> forwardAndAck(event, RabbitMQConfig.RETRY_EXCHANGE,
+                        RabbitMQConfig.RETRY_KEY, channel, deliveryTag);
+                // 已达到模型尝试上限，或前序批次失败：转入待人工处理的队列。
+                case FINAL_FAILURE -> forwardAndAck(event, RabbitMQConfig.DEAD_EXCHANGE,
+                        RabbitMQConfig.DEAD_KEY, channel, deliveryTag);
+                // 仅 CLAIMED 分支读取固定成员并调用模型。
+                case CLAIMED -> processClaim(event, claim, channel, deliveryTag);
+            }
+        } catch (Exception e) {
+            // 领取状态或转发消息失败时保留原消息；数据库长期不可用时这里仍可能反复重投。
+            log.error("Summary consumption failed before a safe ACK", e);
+            channel.basicNack(deliveryTag, false, true);
         }
-        if (!current.isEmpty()) {
-            chunks.add(current.toString());
-        }
-        return chunks;
     }
 
-     private String buildContent(String userMsg, String aiMsg) {
-        return "Q: " + userMsg + "\nA: " + aiMsg;
+    private SummaryChatEvent parseEvent(String body) {
+        // 旧版 conversationId 或 messageIds 消息缺少持久 batchId，不在新流程中重新分配批次。
+        try {
+            var json = JSONUtil.parseObj(body);
+            String batchId = json.getStr("batchId");
+            String conversationId = json.getStr("conversationId");
+            return batchId != null && !batchId.isBlank()
+                    && conversationId != null && !conversationId.isBlank()
+                    ? new SummaryChatEvent(batchId, conversationId) : null;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
+    private void processClaim(SummaryChatEvent event, SummaryBatchService.Claim claim,
+                              Channel channel, long deliveryTag) throws IOException {
+        // claim() 的短事务已结束；反序列化和外部模型调用都不持有会话行锁。
+        try {
+            List<SummaryBatchService.BatchMessage> messages = batches.loadMessages(claim);
+            if (messages.size() != 10) throw new IllegalStateException("Summary batch must contain 10 messages");
+            StringBuilder input = new StringBuilder();
+            for (SummaryBatchService.BatchMessage row : messages) {
+                Message message = KryoUtils.deserialize(row.payload());
+                input.append(formatMessage(message)).append('\n');
+            }
+            String previous = batches.currentSummary(event.conversationId());
+            Prompt prompt = new PromptTemplate(SUMMARY_PROMPT).create(Map.of(
+                    "previousSummary", previous == null ? "" : previous,
+                    "messages", input.toString()));
+            ChatResponse response = model.call(prompt);
+            String summary = response.getResult().getOutput().getText();
+            if (summary == null || summary.isBlank()) throw new IllegalStateException("Empty summary response");
+            // complete() 会再次核对租约令牌，并在一个短事务中提交摘要及归档状态。
+            batches.complete(claim, summary.trim());
+            channel.basicAck(deliveryTag, false);
+        } catch (Exception e) {
+            log.warn("Summary generation failed for batch {}", event.batchId(), e);
+            // fail() 写回重试次数及状态；转发成功前不能 ACK 原消息。
+            SummaryBatchService.Decision next = batches.fail(claim, e);
+            if (next == SummaryBatchService.Decision.FINAL_FAILURE) {
+                forwardAndAck(event, RabbitMQConfig.DEAD_EXCHANGE,
+                        RabbitMQConfig.DEAD_KEY, channel, deliveryTag);
+            } else {
+                forwardAndAck(event, RabbitMQConfig.RETRY_EXCHANGE,
+                        RabbitMQConfig.RETRY_KEY, channel, deliveryTag);
+            }
+        }
+    }
+
+    private void forwardAndAck(SummaryChatEvent event, String exchange, String routingKey,
+                               Channel channel, long deliveryTag) throws IOException {
+        // 先确认目标队列已接收，再 ACK 原消息，避免转发失败时把任务丢掉。
+        publisher.publishConfirmed(exchange, routingKey, event);
+        channel.basicAck(deliveryTag, false);
+    }
 
     private String formatMessage(Message message) {
-
-        String role;
-
-        if (message instanceof SystemMessage) {
-            role = "system";
-        } else if (message instanceof UserMessage) {
-            role = "user";
-        } else if (message instanceof AssistantMessage) {
-            role = "assistant";
-        }  else {
-            role = "unknown";
-        }
-
-        return role + ": "+message.getText();
+        String role = message instanceof SystemMessage ? "system"
+                : message instanceof UserMessage ? "user"
+                : message instanceof AssistantMessage ? "assistant" : "unknown";
+        return role + ": " + message.getText();
     }
 }

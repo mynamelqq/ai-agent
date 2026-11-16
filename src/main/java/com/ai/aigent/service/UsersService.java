@@ -1,6 +1,6 @@
 package com.ai.aigent.service;
 
-import com.ai.aigent.entity.domin.Users;
+import com.ai.aigent.entity.domain.Users;
 import com.baomidou.mybatisplus.extension.service.IService;
 import jakarta.servlet.http.HttpServletRequest;
 

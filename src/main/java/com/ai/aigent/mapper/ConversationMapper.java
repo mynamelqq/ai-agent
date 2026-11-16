@@ -1,7 +1,9 @@
 package com.ai.aigent.mapper;
 
-import com.ai.aigent.entity.domin.Conversation;
+import com.ai.aigent.entity.domain.Conversation;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 /**
 * @author MECHREVO
@@ -10,7 +12,8 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 * @Entity com.ai.aigent.entity.domin.Conversation
 */
 public interface ConversationMapper extends BaseMapper<Conversation> {
-
+    @Select("SELECT id FROM conversation WHERE id = #{id} FOR UPDATE")
+    String lockById(@Param("id") String id);
 }
 
 

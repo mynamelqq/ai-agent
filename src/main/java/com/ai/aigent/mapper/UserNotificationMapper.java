@@ -1,6 +1,6 @@
 package com.ai.aigent.mapper;
 
-import com.ai.aigent.entity.domin.UserNotification;
+import com.ai.aigent.entity.domain.UserNotification;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 /**

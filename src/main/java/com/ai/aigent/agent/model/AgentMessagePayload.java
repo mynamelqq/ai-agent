@@ -1,6 +1,6 @@
 package com.ai.aigent.agent.model;
 
-import com.ai.aigent.entity.domin.AgentMessage;
+import com.ai.aigent.entity.domain.AgentMessage;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 

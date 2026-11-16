@@ -26,10 +26,13 @@ public class CosUploadService {
     private String bucket;
     @Value("${cos.domain}")
     private String domain;
+    @Value("${app.cos-enabled:true}")
+    private boolean cosEnabled;
     @Autowired
     private COSClient cosClient;
 
     public String upload(MultipartFile file, String dir) throws IOException {
+        requireCosEnabled();
 
         String ext = FilenameUtils.getExtension(file.getOriginalFilename());
         String key = dir + "/" + UUID.randomUUID() + "." + ext;
@@ -52,6 +55,7 @@ public class CosUploadService {
     }
 
     public Map<String, Object> createUploadSign(String suffix) {
+        requireCosEnabled();
 
         // 1. 生成随机 COS Key
         String datePath = LocalDate.now().toString(); // 2026-02-05
@@ -77,6 +81,7 @@ public class CosUploadService {
         return resp;
     }
     public Map<String, Object> createUploadAvatarSign(String suffix) {
+        requireCosEnabled();
 
         // 1. 生成随机 COS Key
         String datePath = LocalDate.now().toString(); // 2026-02-05
@@ -100,5 +105,11 @@ public class CosUploadService {
         resp.put("expireAt", expiration.getTime());
 
         return resp;
+    }
+
+    private void requireCosEnabled() {
+        if (!cosEnabled) {
+            throw new IllegalStateException("COS uploads are disabled by app.cos-enabled=false");
+        }
     }
 }

@@ -1,6 +1,6 @@
 package com.ai.aigent.service.impl;
 
-import com.ai.aigent.entity.domin.UserNotification;
+import com.ai.aigent.entity.domain.UserNotification;
 import com.ai.aigent.mapper.UserNotificationMapper;
 import com.ai.aigent.service.UserNotificationService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;

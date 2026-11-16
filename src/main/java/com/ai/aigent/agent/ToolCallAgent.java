@@ -126,7 +126,7 @@ public class ToolCallAgent extends ReActAgent {
                             textBuf.append(text);
                             emit(AgentEvent.text(text));
                         }
-                        if (!output.getToolCalls().isEmpty()) {
+                        if (output.getToolCalls() != null && !output.getToolCalls().isEmpty()) {
                             this.toolCalls = output.getToolCalls();
                             this.toolCallChatResponse = chatResponse;
                         }
@@ -152,10 +152,22 @@ public class ToolCallAgent extends ReActAgent {
                     .subscribe());
 
             try {
-                latch.await(5, TimeUnit.MINUTES);
+                if (!latch.await(5, TimeUnit.MINUTES)) {
+                    if (getCurrentDisposable() != null) {
+                        getCurrentDisposable().dispose();
+                    }
+                    throw new IllegalStateException("模型响应等待超时");
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                log.warn("Agent 等待被中断");
+                if (getCurrentDisposable() != null) {
+                    getCurrentDisposable().dispose();
+                }
+                throw new IllegalStateException("Agent 等待被中断", e);
+            }
+
+            if (Boolean.TRUE.equals(getCancelled())) {
+                return false;
             }
 
             Throwable error = streamError.get();
@@ -164,6 +176,9 @@ public class ToolCallAgent extends ReActAgent {
             }
 
             if (toolCalls == null || toolCalls.isEmpty()) {
+                if (textBuf.toString().isBlank()) {
+                    throw new IllegalStateException("模型返回了空响应，请检查模型配置或稍后重试");
+                }
                 return false;
             }
 
@@ -184,8 +199,7 @@ public class ToolCallAgent extends ReActAgent {
             return true;
         } catch (Exception e) {
             log.error("{} think 异常：{}", getName(), e.getMessage(), e);
-            getMessageList().add(new AssistantMessage("处理时遇到问题：" + e.getMessage()));
-            return false;
+            throw new IllegalStateException("模型推理失败：" + e.getMessage(), e);
         }
     }
 

@@ -1,51 +1,53 @@
 package com.ai.aigent.tools;
 
-import lombok.AllArgsConstructor;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-@AllArgsConstructor
 @Configuration
 public class ToolsRegistration {
-    private WebSearchTool webSearchTool;
-    private ImageGenerateTool imageGenerateTool;
-    private FileOperationTool fileOperationTool;
-    private DownloadResourceTool downloadResourceTool;
-    @Bean
-    public List<ToolCallback> ToolCallback() {//对话工具调用
-        WebScrapingTool webScrapingTool = new WebScrapingTool();
-        TerminalOpTool terminalOperationTool = new TerminalOpTool();
-//        SpecialFileGenerationTool specialFileGenerationTool = new SpecialFileGenerationTool();
-        TimeTool timeTool=new TimeTool();
-        TerminateTool terminateTool=new TerminateTool();
-        return Arrays.stream(ToolCallbacks.from(timeTool,
-//                terminateTool,
-            fileOperationTool,
-            webSearchTool,imageGenerateTool,
-            webScrapingTool,
-            downloadResourceTool,
-            terminalOperationTool
-//                specialFileGenerationTool
-        )).toList();
+    @Value("${app.cos-enabled:true}")
+    private boolean cosEnabled;
+
+    private final WebSearchTool webSearchTool;
+    private final ImageGenerateTool imageGenerateTool;
+    private final FileOperationTool fileOperationTool;
+    private final DownloadResourceTool downloadResourceTool;
+
+    public ToolsRegistration(WebSearchTool webSearchTool, ImageGenerateTool imageGenerateTool,
+                             FileOperationTool fileOperationTool, DownloadResourceTool downloadResourceTool) {
+        this.webSearchTool = webSearchTool;
+        this.imageGenerateTool = imageGenerateTool;
+        this.fileOperationTool = fileOperationTool;
+        this.downloadResourceTool = downloadResourceTool;
     }
+
     @Bean
-    public ToolCallback[] toolCallback() {//智能体工具调用
-        WebScrapingTool webScrapingTool = new WebScrapingTool();
+    public List<ToolCallback> ToolCallback() {
+        return Arrays.asList(callbacks());
+    }
+
+    @Bean
+    public ToolCallback[] toolCallback() {
+        return callbacks();
+    }
+
+    private ToolCallback[] callbacks() {
+        TimeTool timeTool = new TimeTool();
         TerminalOpTool terminalOperationTool = new TerminalOpTool();
-        TimeTool timeTool=new TimeTool();
-        return ToolCallbacks.from(timeTool,
-//                terminateTool,
-            fileOperationTool,
-            webSearchTool,
-            imageGenerateTool,
-            webScrapingTool,
-            downloadResourceTool,
-            terminalOperationTool
-        );
+        WebScrapingTool webScrapingTool = new WebScrapingTool();
+        List<ToolCallback> callbacks = new ArrayList<>(Arrays.asList(
+                ToolCallbacks.from(timeTool, terminalOperationTool, imageGenerateTool,
+                        webSearchTool, webScrapingTool)));
+        if (cosEnabled) {
+            callbacks.addAll(Arrays.asList(ToolCallbacks.from(fileOperationTool, downloadResourceTool)));
+        }
+        return callbacks.toArray(ToolCallback[]::new);
     }
 }

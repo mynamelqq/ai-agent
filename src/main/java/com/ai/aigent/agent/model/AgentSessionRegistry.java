@@ -9,8 +9,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class AgentSessionRegistry {
      private final Map<String, BaseAgent> sessions = new ConcurrentHashMap<>();
-        public void register(String sessionId, BaseAgent agent) {
-            sessions.put(sessionId, agent);
+        public boolean register(String sessionId, BaseAgent agent) {
+            return sessions.putIfAbsent(sessionId, agent) == null;
         }
 
         public void cancel(String sessionId) {
@@ -19,7 +19,10 @@ public class AgentSessionRegistry {
                 agent.cancel();
             }
         }
-        public void remove(String sessionId) {
-            sessions.remove(sessionId);
+        public boolean isRunning(String sessionId) {
+            return sessions.containsKey(sessionId);
+        }
+        public void remove(String sessionId, BaseAgent agent) {
+            sessions.remove(sessionId, agent);
         }
 }

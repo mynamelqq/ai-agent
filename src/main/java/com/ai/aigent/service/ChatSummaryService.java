@@ -1,6 +1,6 @@
 package com.ai.aigent.service;
 
-import com.ai.aigent.entity.domin.ChatSummary;
+import com.ai.aigent.entity.domain.ChatSummary;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**

@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "amap-maps": {
-      "command": "npx.cmd",
+      "command": "/usr/bin/npx",
       "args": [
         "-y",
         "@amap/amap-maps-mcp-server"

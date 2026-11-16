@@ -1,6 +1,6 @@
 package com.ai.aigent.mapper;
 
-import com.ai.aigent.entity.domin.ChatMessage;
+import com.ai.aigent.entity.domain.ChatMessage;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 /**

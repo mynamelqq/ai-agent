@@ -1,9 +1,8 @@
 package com.ai.aigent.service.impl;
 
-import cn.hutool.core.util.RandomUtil;
-import com.ai.aigent.entity.domin.ChatMessage;
-import com.ai.aigent.entity.domin.Conversation;
-import com.ai.aigent.entity.domin.UserSetting;
+import com.ai.aigent.entity.domain.ChatMessage;
+import com.ai.aigent.entity.domain.Conversation;
+import com.ai.aigent.entity.domain.UserSetting;
 import com.ai.aigent.entity.dto.ChatSendReq;
 import com.ai.aigent.mapper.ChatMessageMapper;
 import com.ai.aigent.service.ChatMessageService;
@@ -16,7 +15,6 @@ import jakarta.annotation.Resource;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -83,6 +81,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                 .setSql("token = token + "+ token)
                 .set(ChatMessage::getCompleted,true)
                 .update();
+        maybeCreateSummaryBatches(conversationId);
     }
     @Override
     public void updateMessage(String conversationId, String message, String messageId, String type, Integer token,Integer cost,
@@ -122,6 +121,7 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             entity.setIsGenerate(chatSendReq.getIsGenerateFile());
             entity.setMessageType("user");
             this.save(entity);
+            maybeCreateSummaryBatches(chatSendReq.getChatId());
     }
     @Override
     public void saveMessages(String conversationId, List<Message> messages) {
@@ -134,9 +134,10 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
             entity.setMessageType(message.getMessageType().getValue());
             this.save(entity);
         }
+        maybeCreateSummaryBatches(conversationId);
     }
     @Resource
-    private RabbitTemplate rabbitTemplate;
+    private SummaryBatchService summaryBatchService;
     @Autowired
     private ConversationService conversationService;
     @Autowired
@@ -174,22 +175,20 @@ public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageMapper, ChatM
                         .orderByDesc(ChatMessage::getCreateTime)
                         .last("LIMIT " + lastN)
         );
-        if (userSetting!=null) {//有登录才创建
-             long total = this.count(
-                Wrappers.<ChatMessage>lambdaQuery()
-                    .eq(ChatMessage::getIsDeleted, 0)
-                    .eq(ChatMessage::getConversationId, conversationId)
-            );
-            if(total >= lastN){
-                 if(userSetting.getIsSummary()) {
-                rabbitTemplate.convertAndSend("summaryChatExchange", "summary", conversationId);
-                }
-            }
-        }
         entities.sort(Comparator.comparing(ChatMessage::getCreateTime));
         return entities.stream()
                        .map(this::deserialize)
                        .toList();
+    }
+
+    private void maybeCreateSummaryBatches(String conversationId) {
+        // 只在用户开启摘要时分配批次；这里只写数据库，RabbitMQ 发布交给定时任务。
+        Conversation conversation = conversationService.getById(conversationId);
+        if (conversation == null) return;
+        UserSetting setting = userSettingService.getById(conversation.getUserId());
+        if (setting != null && Boolean.TRUE.equals(setting.getIsSummary())) {
+            summaryBatchService.createBatches(conversationId);
+        }
     }
     @Override
     public long countByConversationId(String conversationId) {

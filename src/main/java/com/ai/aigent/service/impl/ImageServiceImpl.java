@@ -1,7 +1,7 @@
 package com.ai.aigent.service.impl;
 
 import cn.hutool.core.util.RandomUtil;
-import com.ai.aigent.entity.domin.Image;
+import com.ai.aigent.entity.domain.Image;
 import com.ai.aigent.mapper.ImageMapper;
 import com.ai.aigent.service.ImageService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;

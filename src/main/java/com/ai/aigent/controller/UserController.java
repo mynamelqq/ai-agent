@@ -2,8 +2,8 @@ package com.ai.aigent.controller;
 
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.VO.UserVo;
-import com.ai.aigent.entity.domin.UserSetting;
-import com.ai.aigent.entity.domin.Users;
+import com.ai.aigent.entity.domain.UserSetting;
+import com.ai.aigent.entity.domain.Users;
 import com.ai.aigent.exception.BusinessException;
 import com.ai.aigent.mapper.UsersMapper;
 import com.ai.aigent.service.UserSettingService;

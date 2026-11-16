@@ -1,9 +1,9 @@
 package com.ai.aigent.service.impl;
 
 import com.ai.aigent.constant.ResultCodeEnum;
-import com.ai.aigent.entity.domin.AnonymousUser;
-import com.ai.aigent.entity.domin.UserUsageDaily;
-import com.ai.aigent.entity.domin.Users;
+import com.ai.aigent.entity.domain.AnonymousUser;
+import com.ai.aigent.entity.domain.UserUsageDaily;
+import com.ai.aigent.entity.domain.Users;
 import com.ai.aigent.exception.TokenLimitExceed;
 import com.ai.aigent.mapper.UserUsageDailyMapper;
 import com.ai.aigent.service.AnonymousUserService;

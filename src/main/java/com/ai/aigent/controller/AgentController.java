@@ -8,12 +8,11 @@ import com.ai.aigent.app.SpringAiCode;
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.VO.AgentMessageVO;
 import com.ai.aigent.entity.VO.AgentSessionVO;
-import com.ai.aigent.entity.domin.AgentMessage;
-import com.ai.aigent.entity.domin.AgentSession;
-import com.ai.aigent.entity.domin.AnonymousUser;
+import com.ai.aigent.entity.domain.AgentMessage;
+import com.ai.aigent.entity.domain.AgentSession;
 import com.ai.aigent.entity.dto.AgentSendReq;
+import com.ai.aigent.exception.BusinessException;
 import com.ai.aigent.service.*;
-import com.ai.aigent.utils.JWTUtils;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +27,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @RestController
@@ -51,34 +51,32 @@ public class AgentController {
     private AgentMessageService agentMessageService;
     @PostMapping("/session")
     public Result<AgentSessionVO> createSession(String message, HttpServletRequest request, String SessionId) {
+        if (SessionId == null || SessionId.isBlank()) {
+            throw BusinessException.badRequest("会话 ID 不能为空");
+        }
         AgentSession session = new AgentSession();
-        String userId =usersService.getLoginUser(request);
-        if (userId.isBlank()||userId.isEmpty()) {
-            throw new IllegalArgumentException("用户未登录");
+        String userId = requireUserId(request);
+        if (agentSessionService.getById(SessionId) != null) {
+            throw BusinessException.conflict("会话已存在");
         }
         session.setUserId(userId);
         session.setTitle(springAiCode.genTitle(message));
         session.setCreateTime(new Date());
         session.setUpdateTime(new Date());
         session.setId(SessionId);
-        agentSessionService.save(session);
+        if (!agentSessionService.save(session)) {
+            throw BusinessException.internalError("创建会话失败");
+        }
         AgentSessionVO vo = new AgentSessionVO();
         vo.setSessionId(session.getId());
         vo.setTitle(session.getTitle());
         vo.setCreateTime(session.getCreateTime());
         return Result.success(vo);
     }
-      @GetMapping("/messages")
+    @GetMapping("/messages")
     public Result<List<AgentMessageVO>> listMessages(
             @RequestParam String sessionId,HttpServletRequest request) {
-        String userId =usersService.getLoginUser(request);
-        if (userId.isBlank()||userId.isEmpty()) {
-            throw new IllegalArgumentException("用户未登录");
-        }
-        AgentSession session = agentSessionService.getById(sessionId);
-        if (session == null) {
-            return Result.error("无权访问");
-        }
+        requireOwnedSession(sessionId, request);
         List<AgentMessage> messages = agentMessageService.lambdaQuery()
                 .eq(AgentMessage::getSessionId, sessionId)
                 .orderByAsc(AgentMessage::getCreatedAt)
@@ -115,22 +113,14 @@ public class AgentController {
     @Autowired
     private AgentSessionRegistry agentSessionRegistry;
     @PostMapping("/cancel")
-    public Result cancel(@RequestParam String sessionId) {
-
-        try {
-            agentSessionRegistry.cancel(sessionId);
-            return Result.success();
-        } catch (Exception e) {
-            log.warn("取消操作异常: {}", e.getMessage());
-            return Result.success();
-        }
+    public Result cancel(@RequestParam String sessionId, HttpServletRequest request) {
+        requireOwnedSession(sessionId, request);
+        agentSessionRegistry.cancel(sessionId);
+        return Result.success();
     }
     @GetMapping("/sessions")
     public Result<List<AgentSessionVO>> listSessions(HttpServletRequest request) {
-        String userId =usersService.getLoginUser(request);
-        if (userId.isBlank()||userId.isEmpty()) {
-            throw new IllegalArgumentException("用户未登录");
-        }
+        String userId = requireUserId(request);
         List<AgentSession> sessions = agentSessionService.lambdaQuery()
                 .eq(AgentSession::getUserId, userId)
                 .orderByDesc(AgentSession::getUpdateTime)
@@ -147,43 +137,39 @@ public class AgentController {
     }
     @PostMapping(value = "/run", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter run(@RequestBody AgentSendReq agentSendReq,HttpServletRequest req) {
-         String token = agentSendReq.getToken();
          String sessionId = agentSendReq.getSessionId();
          String prompt = agentSendReq.getMessage();
-         String uid;
-         String type;
-          String userId =usersService.getLoginUser(req);
-        if (userId.isBlank()||userId.isEmpty()) {
-            throw new IllegalArgumentException("用户未登录");
-        }
-         saveMessage(sessionId, "user", prompt, null, null, 0);
-         agentSessionService.lambdaUpdate()
+         String userId = requireUserId(req);
+         requireOwnedSession(sessionId, userId);
+         if (prompt == null || prompt.isBlank()) {
+             throw BusinessException.badRequest("消息不能为空");
+         }
+         Manus manus = manusProvider.getObject();
+         if (!agentSessionRegistry.register(sessionId, manus)) {
+             throw BusinessException.conflict("该会话已有正在执行的任务");
+         }
+         try {
+             saveMessage(sessionId, "user", prompt, null, null, 0);
+             agentSessionService.lambdaUpdate()
                 .eq(AgentSession::getId, sessionId)
                 .set(AgentSession::getLastMessage, prompt)
                 .set(AgentSession::getUpdateTime, new Date())
                 .update();
 
-         if(token!=null&&!token.isEmpty()){
-             token=JWTUtils.extractToken(token);
-            uid = JWTUtils.getUserId(token);
-            type = "user";
+             String type = req.getHeader("Authorization") == null ? "anon" : "user";
+             dailyService.checkAndConsume(userId, type);
+             return manus.agentRun(prompt, sessionId, agentSendReq.getAttachments(), userId);
+         } catch (RuntimeException | Error e) {
+             agentSessionRegistry.remove(sessionId, manus);
+             throw e;
          }
-        else {
-            AnonymousUser user = anonymousUserService.getById(req);
-            uid = user.getAnonId();
-            type = "anon";
-        }
-        dailyService.checkAndConsume(uid,type);
-        Manus manus = manusProvider.getObject();
-        // 6. 启动流
-        return manus.agentRun(prompt,sessionId,agentSendReq.getAttachments(),userId);
     }
     @Transactional
     @PostMapping("/delete")
-    public Result delete(@RequestParam Long sessionId) {
-        AgentSession session = agentSessionService.getById(sessionId);
-        if (session == null) {
-            return Result.error("会话不存在");
+    public Result delete(@RequestParam String sessionId, HttpServletRequest request) {
+        requireOwnedSession(sessionId, request);
+        if (agentSessionRegistry.isRunning(sessionId)) {
+            throw BusinessException.conflict("任务执行中，请先取消");
         }
         // 删除会话
         agentSessionService.removeById(sessionId);
@@ -192,5 +178,36 @@ public class AgentController {
                 .eq(AgentMessage::getSessionId, sessionId)
                 .remove();
         return Result.success();
+    }
+
+    private String requireUserId(HttpServletRequest request) {
+        String userId;
+        try {
+            userId = usersService.getLoginUser(request);
+        } catch (IllegalArgumentException e) {
+            throw BusinessException.unauthorized("请先登录");
+        }
+        if (userId == null || userId.isBlank()) {
+            throw BusinessException.unauthorized("请先登录");
+        }
+        return userId;
+    }
+
+    private AgentSession requireOwnedSession(String sessionId, HttpServletRequest request) {
+        return requireOwnedSession(sessionId, requireUserId(request));
+    }
+
+    private AgentSession requireOwnedSession(String sessionId, String userId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw BusinessException.badRequest("会话 ID 不能为空");
+        }
+        AgentSession session = agentSessionService.getById(sessionId);
+        if (session == null) {
+            throw BusinessException.notFound("会话不存在");
+        }
+        if (!Objects.equals(session.getUserId(), userId)) {
+            throw BusinessException.forbidden("无权访问该会话");
+        }
+        return session;
     }
 }

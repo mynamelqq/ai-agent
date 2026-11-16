@@ -31,4 +31,10 @@ public class DataSourceConfig {
     public DataSource mysqlDataSource() {
         return DataSourceBuilder.create().build();
     }
+
+    @Bean(name = "mysqlJdbcTemplate")
+    @Primary
+    public JdbcTemplate mysqlJdbcTemplate(@Qualifier("mysqlDataSource") DataSource dataSource) {
+        return new JdbcTemplate(dataSource);
+    }
 }
