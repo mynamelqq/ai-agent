@@ -11,7 +11,7 @@ spring:
   rabbitmq:
     host: 192.168.86.1
     port: 5672
-    username: admin
+    username: appuser
 
     password: 123321
     virtual-host: /
@@ -50,7 +50,8 @@ agent:
     chat:
       provider: openai
       model: deepseek-v4.1-flash-1017
-
+sandbox:
+  enabled: true
 
 
 springdoc:

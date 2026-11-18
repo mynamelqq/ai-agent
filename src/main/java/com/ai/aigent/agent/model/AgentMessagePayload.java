@@ -14,6 +14,10 @@ public class AgentMessagePayload {
     private String toolName;       // 工具名
     private String toolArgs;       // 入参 JSON
     private String toolResult;     // 结果
+    private String displayResult;  // 前端展示的工具结果
+    private Boolean toolSuccess;   // null 表示无法判断
+    private String displayFormat;  // text | code
+    private String language;       // 代码语言，如 python
     @Data
     @AllArgsConstructor
     public static class ToolCallRecord {

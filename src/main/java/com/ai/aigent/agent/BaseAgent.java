@@ -1,10 +1,12 @@
 package com.ai.aigent.agent;
 
 import cn.hutool.json.JSONUtil;
+import com.ai.aigent.agent.model.AgentAttachment;
 import com.ai.aigent.agent.model.AgentEvent;
 import com.ai.aigent.agent.model.AgentSessionRegistry;
 import com.ai.aigent.agent.model.AgentState;
 import com.ai.aigent.constant.AiConstants;
+import com.ai.aigent.constant.FileConstant;
 import com.ai.aigent.entity.domain.AiAttachment;
 import com.ai.aigent.service.AgentMessageService;
 import com.ai.aigent.service.AgentSessionService;
@@ -25,8 +27,12 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
@@ -35,6 +41,8 @@ import java.util.function.Consumer;
 @Data
 @Slf4j
 public abstract class BaseAgent {
+    private static final int MAX_ATTACHMENT_PROMPT_LENGTH = 1024;
+    private com.ai.aigent.sandbox.SandboxManager sandboxManager;
     private String name;
     private String systemPrompt;
     private String nextStepPrompt;
@@ -44,11 +52,12 @@ public abstract class BaseAgent {
     private volatile Boolean cancelled = false;
     private AiAttachmentService attachmentService;
     private AttachmentReaderUtil attachmentReaderUtil;
-    private int maxStep=16;
+    private int maxStep=20;
     private String systemSuffix;
     private String userId;
     private ChatClient chatClient;
     private String sessionId;
+    private Long runId;
     private List<Media>mediaList = new ArrayList<>();
     private  AgentSessionRegistry agentSessionRegistry;
     private SseEmitter emitter;
@@ -57,8 +66,13 @@ public abstract class BaseAgent {
     private  AgentMessageService agentMessageService;
     private  AgentSessionService agentSessionService;
     private List<Message>messageList=new ArrayList<>();
+    private List<AgentAttachment> sessionAttachments = new ArrayList<>();
+
     protected void emit(AgentEvent event) {
         try {
+            Map<String, Object> meta = event.getMeta() == null
+                    ? new HashMap<>() : new HashMap<>(event.getMeta());
+            event.setMeta(meta);
             emitter.send(SseEmitter.event()
                     .name(event.getType())
                     .data(JSONUtil.toJsonStr(event)));
@@ -72,6 +86,7 @@ public abstract class BaseAgent {
     }
      public void cancel() {
         cancelled = true;
+        if (sandboxManager != null && sessionId != null) sandboxManager.cancel(sessionId);
         if (currentDisposable != null && !currentDisposable.isDisposed()) {
             currentDisposable.dispose();
         }
@@ -85,12 +100,16 @@ public abstract class BaseAgent {
          systemSuffix = null;
          userId = null;
          sessionId = null;
+         runId = null;
          emitter = null;
          mediaList.clear();
          messageList.clear();
+         sessionAttachments.clear();
     }
-     public SseEmitter agentRun(String userPrompt, String sessionId, List<Long>attachments, String userId) {
+     public SseEmitter agentRun(String userPrompt, String sessionId, Long runId, List<Long>attachments, String userId) {
         initializeRunState(sessionId, userId);
+        this.runId = Objects.requireNonNull(runId, "runId 不能为空");
+
         emitter = new SseEmitter(1000 * 60 * 8L);
         emitter.onTimeout(() -> {
             cancel(); // 超时也取消后台流
@@ -98,12 +117,10 @@ public abstract class BaseAgent {
         CompletableFuture.runAsync(() -> {
             try {
                 this.agentState = AgentState.RUNNING;
+                restoreSessionAttachments();
                 if (attachments != null && !attachments.isEmpty()) {
                     emit(AgentEvent.attachmentLoading()); // 通知前端"正在读取附件"
-                    String attachmentContent = loadAttachments(attachments, userPrompt);
-                    if (!attachmentContent.isEmpty()) {
-                        this.systemSuffix = attachmentContent;
-                    }
+                    mergeSessionAttachments(loadAttachments(attachments));
                     emit(AgentEvent.attachmentLoaded()); // 通知前端"附件读取完成"
                 }
                 this.getMessageList().add(new SystemMessage(buildRuntimeSystemPrompt()));
@@ -144,16 +161,89 @@ public abstract class BaseAgent {
         this.systemSuffix = null;
         this.mediaList = new ArrayList<>();
         this.messageList = new ArrayList<>();
+        this.sessionAttachments = new ArrayList<>();
     }
     private String buildRuntimeSystemPrompt() {
-        return systemPrompt + (systemSuffix == null ? "" : systemSuffix);
+        return systemPrompt + (systemSuffix == null ? "" : systemSuffix) + formatSessionAttachments();
     }
-    private String loadAttachments(List<Long> attachmentIds, String userPrompt) {
-        StringBuilder attachmentContent = new StringBuilder();
+    private void restoreSessionAttachments() {
+        if (attachmentService == null || sessionId == null) {
+            return;
+        }
+        List<AiAttachment> attachments = attachmentService.lambdaQuery()
+                .eq(AiAttachment::getConservationId, sessionId)//恢复该会话历轮附件
+                .eq(AiAttachment::getUserId, userId)
+                .orderByAsc(AiAttachment::getCreatedAt)
+                .list();
+        if (attachments != null) {
+            for (AiAttachment attachment : attachments) {
+                if (attachment.getFileType() != null && attachment.getFileType().startsWith("image/")) {
+                    sessionAttachments.add(toAgentAttachment(attachment));
+                } else if (attachment.getFileName() != null && Files.isRegularFile(
+                        Paths.get(FileConstant.ATTACHMENTS_SAVE_DIR, sessionId, attachment.getFileName()))) {
+                    sessionAttachments.add(toAgentAttachment(attachment));
+                }
+            }
+        }
+    }
+    private void mergeSessionAttachments(List<AgentAttachment> attachments) {
+        Map<Long, AgentAttachment> merged = new LinkedHashMap<>();
+        for (AgentAttachment attachment : sessionAttachments) {
+            merged.put(attachment.getId(), attachment);
+        }
+        for (AgentAttachment attachment : attachments) {
+            merged.put(attachment.getId(), attachment);
+        }
+        sessionAttachments = new ArrayList<>(merged.values());
+    }
+    String formatSessionAttachments() {
+        if (sessionAttachments.isEmpty()) {
+            return "";
+        }
+        StringBuilder result = new StringBuilder("\n当前会话可用的附件（按最近添加顺序）：\n");
+        List<AgentAttachment> recentFirst = new ArrayList<>(sessionAttachments);
+        Collections.reverse(recentFirst);
+        for (AgentAttachment attachment : recentFirst) {
+            String name = String.valueOf(attachment.getFileName()).replace('\n', ' ').replace('\r', ' ');
+            String type = String.valueOf(attachment.getFileType()).replace('\n', ' ').replace('\r', ' ');
+            String line = "- 文件名: " + name + "；ID: " + attachment.getId()
+                    + "；类型: " + type + "；大小: " + attachment.getFileSize() + " 字节";
+            if (type.startsWith("image/")) {
+                line += "；图片附件";
+            } else {
+                line += "；路径: /attachments/" + name;
+            }
+            line += "\n";
+            if (result.length() + line.length() > MAX_ATTACHMENT_PROMPT_LENGTH) {
+                result.append(line, 0, MAX_ATTACHMENT_PROMPT_LENGTH - result.length());
+                break;
+            }
+            result.append(line);
+        }
+        return result.toString();
+    }
+    private AgentAttachment toAgentAttachment(AiAttachment source) {
+        AgentAttachment attachment = new AgentAttachment();
+        attachment.setId(source.getId());
+        attachment.setFileName(source.getFileName());
+        attachment.setFileSize(source.getFileSize());
+        attachment.setFileType(source.getFileType());
+        return attachment;
+    }
+    private List<AgentAttachment> loadAttachments(List<Long> attachmentIds) {
         List<AiAttachment> aiAttachments = attachmentService.listByIds(attachmentIds);
-
+        List<AgentAttachment>agentAttachments=new ArrayList<>();
         for (AiAttachment aiAttachment : aiAttachments) {
-            if (aiAttachment.getFileType().startsWith("image/")) {
+            if (!Objects.equals(aiAttachment.getConservationId(), sessionId) ||
+                !Objects.equals(String.valueOf(aiAttachment.getUserId()), userId))
+                throw new SecurityException("附件不属于当前会话用户");
+            if (!Objects.equals(aiAttachment.getChatId(), String.valueOf(runId))) {
+                throw new IllegalArgumentException("附件不属于当前 runId");
+            }
+            if (aiAttachment.getFileName() == null || aiAttachment.getFileName().contains("/") ||
+                aiAttachment.getFileName().contains("\\") || aiAttachment.getFileName().equals(".."))
+                throw new IllegalArgumentException("附件文件名非法");
+            if (aiAttachment.getFileType().startsWith("image/")) {//图片上传cos直接放到记忆数组
                 try {
                     COSObject object = attachmentReaderUtil.getObject(AiConstants.bulk, aiAttachment.getFileUrl());
                     byte[] bytes = StreamUtils.copyToByteArray(object.getObjectContent());
@@ -169,14 +259,21 @@ public abstract class BaseAgent {
                 continue;
             }
             try {
-                attachmentContent.append(
-                    attachmentReaderUtil.readContent(aiAttachment, userPrompt)
-                ).append("\n");
+                Path targetPath = Paths.get(FileConstant.ATTACHMENTS_SAVE_DIR, sessionId,aiAttachment.getFileName());//保存这个文件
+                COSObject object = attachmentReaderUtil.getObject(AiConstants.bulk, aiAttachment.getFileUrl());
+                try (InputStream inputStream = object.getObjectContent()) {
+                    Files.copy(
+                            inputStream,
+                            targetPath,
+                            StandardCopyOption.REPLACE_EXISTING
+                    );
+                }
+                agentAttachments.add(toAgentAttachment(aiAttachment));
             } catch (Exception e) {
                 log.error("读取文本附件失败: {}", aiAttachment.getFileName(), e);
             }
         }
-        return attachmentContent.toString();
+        return agentAttachments;
     }
     public String run(String userPrompt)
     {

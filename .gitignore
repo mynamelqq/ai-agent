@@ -35,4 +35,4 @@ build/
 tmp/
 sites
 .dockerignore
-
+*.md

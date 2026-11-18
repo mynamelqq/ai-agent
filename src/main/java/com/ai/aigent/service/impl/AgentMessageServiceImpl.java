@@ -5,8 +5,12 @@ import com.ai.aigent.agent.model.AgentMessagePayload;
 import com.ai.aigent.entity.domain.AgentMessage;
 import com.ai.aigent.mapper.AgentMessageMapper;
 import com.ai.aigent.service.AgentMessageService;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
 * @author MECHREVO
@@ -16,13 +20,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class AgentMessageServiceImpl extends ServiceImpl<AgentMessageMapper, AgentMessage>
     implements AgentMessageService{
-    public AgentMessage saveAgentMessage(String sessionId, String type, AgentMessagePayload payload,
+    public AgentMessage saveAgentMessage(String sessionId, Long runId, String type, AgentMessagePayload payload,
                                          Integer token,Long thinkingTime,Long cost, Integer promptTokens,
                                          Integer completionTokens,Integer cachedTokens)
     {
         AgentMessage msg = new AgentMessage();
         msg.setPayload(JSONUtil.toJsonStr(payload));
         msg.setSessionId(sessionId);
+        msg.setRunId(runId);
         msg.setCost(safeToDbInt(cost));
         msg.setCachedTokens(cachedTokens);
         msg.setPromptTokens(promptTokens);
@@ -34,6 +39,9 @@ public class AgentMessageServiceImpl extends ServiceImpl<AgentMessageMapper, Age
         return save(msg)?msg:null;
     }
 
+    public List<AgentMessage> listAgentMessages(String sessionId){
+        return new ArrayList<>();
+    }
     private static Integer safeToDbInt(Long value) {
         if (value == null) {
             return 0;

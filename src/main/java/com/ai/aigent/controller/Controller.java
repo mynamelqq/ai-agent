@@ -101,7 +101,7 @@ public class Controller {
         return Result.success(listVO);
     }
     @Autowired
-    private AiAttachmentService  aiAttachmentService;
+    private AiAttachmentService aiAttachmentService;
     @GetMapping("/list/message/{page}")
     public Result<Page<ChatMessageVO>> listMessage(String ChatId,@PathVariable int page)
     {

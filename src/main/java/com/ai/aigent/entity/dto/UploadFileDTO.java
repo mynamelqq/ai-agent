@@ -5,11 +5,12 @@ import lombok.Data;
 @Data
 public class UploadFileDTO {
     private String chat_id;
+    // Agent 附件所属轮次；普通聊天继续使用 chat_id。
+    private Long runId;
     private String conservation_id;
     private String file_name;
     private String file_url;
     private Long file_size;
-
     private String file_type;
 
 

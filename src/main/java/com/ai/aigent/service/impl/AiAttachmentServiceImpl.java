@@ -94,11 +94,11 @@ public class AiAttachmentServiceImpl extends ServiceImpl<AiAttachmentMapper, AiA
         // 写入数据库
         AiAttachment attachment = new AiAttachment();
 
-        attachment.setChatId(dto.getChat_id());
+        attachment.setChatId(dto.getRunId() == null ? dto.getChat_id() : dto.getRunId().toString());
         attachment.setFileName(file.getOriginalFilename());
         attachment.setFileUrl(url);
         attachment.setFileSize(file.getSize());
-        attachment.setFileType(file.getContentType());
+        attachment.setFileSize(file.getSize());attachment.setFileType(file.getContentType());
         attachment.setConservationId(dto.getConservation_id());
         attachmentMapper.insert(attachment);
         return attachment;

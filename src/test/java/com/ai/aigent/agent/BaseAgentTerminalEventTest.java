@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BaseAgentTerminalEventTest {
     private static class RecordingAgent extends BaseAgent {
         private final List<String> eventTypes = new ArrayList<>();
+        private final List<Long> observedRunIds = new ArrayList<>();
 
         @Override
         protected void emit(AgentEvent event) {
@@ -22,6 +23,7 @@ class BaseAgentTerminalEventTest {
 
         @Override
         public String step() {
+            observedRunIds.add(getRunId());
             return "继续执行";
         }
     }
@@ -35,10 +37,27 @@ class BaseAgentTerminalEventTest {
         agent.setMaxStep(1);
         assertTrue(registry.register("session", agent));
 
-        agent.agentRun("question", "session", List.of(), "user");
+        agent.agentRun("question", "session", 101L, List.of(), "user");
 
         assertEquals(List.of("step_start", "warn", "done"), agent.eventTypes);
         assertFalse(registry.isRunning("session"));
+    }
+
+    @Test
+    void successiveRunsKeepTheirOwnRunIdAndClearItAfterCompletion() {
+        RecordingAgent agent = new RecordingAgent();
+        AgentSessionRegistry registry = new AgentSessionRegistry();
+        agent.setAgentSessionRegistry(registry);
+        agent.setAgentExecutor(Runnable::run);
+        agent.setMaxStep(1);
+
+        for (long runId : List.of(101L, 102L)) {
+            assertTrue(registry.register("session", agent));
+            agent.agentRun("question", "session", runId, List.of(), "user");
+            org.junit.jupiter.api.Assertions.assertNull(agent.getRunId());
+        }
+
+        assertEquals(List.of(101L, 102L), agent.observedRunIds);
     }
 
     @Test
@@ -50,7 +69,7 @@ class BaseAgentTerminalEventTest {
         assertTrue(registry.register("session", agent));
         registry.cancel("session");
 
-        agent.agentRun("question", "session", List.of(), "user");
+        agent.agentRun("question", "session", 101L, List.of(), "user");
 
         assertEquals(List.of("cancelled"), agent.eventTypes);
         assertFalse(registry.isRunning("session"));

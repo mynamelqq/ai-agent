@@ -20,7 +20,7 @@ public class AgentRuntimeConfig {
     @Value("${agent.manus.chat.provider:openai}")
     private String manusChatProvider;
 
-    @Value("${agent.manus.chat.model}")
+    @Value("qwen4-max")
     private String manusChatModel;
 
     @Bean("agentTaskExecutor")

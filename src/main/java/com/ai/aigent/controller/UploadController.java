@@ -4,6 +4,7 @@ package com.ai.aigent.controller;
 import com.ai.aigent.constant.Result;
 import com.ai.aigent.entity.domain.AiAttachment;
 import com.ai.aigent.entity.dto.UploadFileDTO;
+import com.ai.aigent.exception.BusinessException;
 import com.ai.aigent.service.AiAttachmentService;
 import com.ai.aigent.service.UsersService;
 import com.ai.aigent.service.impl.CosUploadService;
@@ -67,12 +68,16 @@ public class UploadController {
         att.setFileUrl(req.getFile_url());
         att.setFileSize(req.getFile_size());
         att.setFileType(req.getFile_type());
-        att.setChatId(req.getChat_id());
+        if (req.getRunId() != null && req.getRunId() <= 0) {
+            throw BusinessException.badRequest("runId 必须为正整数");
+        }
+        att.setChatId(req.getRunId() == null ? req.getChat_id() : req.getRunId().toString());
         att.setConservationId(req.getConservation_id());
         String userId = usersService.getLoginUser(request);
         if(userId.isBlank()){
             return Result.error("请先登录");
         }
+        att.setUserId(Long.valueOf(userId));
         String s = IdGenerator.createDefault().numericId(15);
         att.setId(Long.parseLong(s));
         attachmentService.save(att);

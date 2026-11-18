@@ -1,6 +1,5 @@
 package com.ai.aigent.tools;
 
-import com.ai.aigent.constant.FileConstant;
 import com.ai.aigent.entity.dto.FileGenerateDTO;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,7 +36,6 @@ import java.util.concurrent.CompletableFuture;
 public class FileOperationTool {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    public final String FILE_DIR = FileConstant.FILE_SAVE_DIR + "\\file";
     @Value("${cos.bucket}")
     private String bucket;
     @Value("${cos.region}")

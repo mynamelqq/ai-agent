@@ -18,6 +18,7 @@ public class AgentMessage {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String sessionId;
+    private Long runId;
     private String type;
     private Integer tokens;
     private Date createdAt;

@@ -1,0 +1,2 @@
+2026-11-17T11:45:11.212349Z ERROR codex_tui::updates: Failed to update version: error sending request for url (https://api.github.com/repos/openai/codex/releases/latest)
+2026-11-17T11:45:21.778567Z  WARN codex_tui::startup_orchestration: failed to finish interactive telemetry shutdown error=telemetry shutdown exceeded its time budget

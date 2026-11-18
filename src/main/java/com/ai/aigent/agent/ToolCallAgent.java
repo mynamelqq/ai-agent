@@ -1,6 +1,5 @@
 package com.ai.aigent.agent;
 
-import cn.hutool.core.collection.CollectionUtil;
 import com.ai.aigent.agent.model.*;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import lombok.Data;
@@ -10,7 +9,11 @@ import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
-import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.model.MessageAggregator;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -26,6 +29,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -41,6 +45,7 @@ public class ToolCallAgent extends ReActAgent {
     private final ToolCallingManager toolCallingManager;
     private final ChatOptions chatOptions;
     private final ToolCallbackProvider toolCallbackProvider;
+    private Prompt currentToolPrompt;
 
     public ToolCallAgent(List<ToolCallback> availableTools, ToolCallbackProvider toolCallbackProvider,
                          ToolCallingManager toolCallingManager, ChatOptions chatOptions) {
@@ -53,9 +58,6 @@ public class ToolCallAgent extends ReActAgent {
 
     @Override
     public boolean think() {
-        if (StringUtils.isNotBlank(this.getNextStepPrompt()) && getMessageList().size() <= 2) {
-            getMessageList().add(new UserMessage(getNextStepPrompt()));
-        }
 
         StringBuilder reasoningBuf = new StringBuilder();
         StringBuilder textBuf = new StringBuilder();
@@ -63,9 +65,7 @@ public class ToolCallAgent extends ReActAgent {
         toolCallChatResponse = null;
 
         try {
-            Map<String, Object> toolContext = new HashMap<>();
-            toolContext.put("chatId", getSessionId());
-            toolContext.put("userId", getUserId());
+            currentToolPrompt = buildToolPrompt();
 
             AtomicReference<Usage> finalUsage = new AtomicReference<>();
             AtomicReference<Throwable> streamError = new AtomicReference<>();
@@ -75,14 +75,17 @@ public class ToolCallAgent extends ReActAgent {
             AtomicReference<Long> endTime = new AtomicReference<>(System.currentTimeMillis());
             AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
             Flux<ChatResponse> responseFlux = getChatClient()
-                    .prompt(new Prompt(buildPrompt(getMessageList()), chatOptions))
-                    .toolCallbacks(availableTools)
+                    .prompt(currentToolPrompt)
                     .advisors(new SimpleLoggerAdvisor())
-                    .toolCallbacks(toolCallbackProvider)
-                    .toolContext(toolContext)
                     .stream()
                     .chatResponse();
 
+            // Aggregate provider-normalized tool calls across the entire stream, including
+            // calls emitted in different chunks. Do not execute an intermediate chunk.
+            responseFlux = new MessageAggregator().aggregate(responseFlux, response -> {
+                toolCallChatResponse = response;
+                toolCalls = response.getResult().getOutput().getToolCalls();
+            });
             CountDownLatch latch = new CountDownLatch(1);
             setCurrentDisposable(responseFlux
                     .doOnNext(chatResponse -> {
@@ -126,10 +129,6 @@ public class ToolCallAgent extends ReActAgent {
                             textBuf.append(text);
                             emit(AgentEvent.text(text));
                         }
-                        if (output.getToolCalls() != null && !output.getToolCalls().isEmpty()) {
-                            this.toolCalls = output.getToolCalls();
-                            this.toolCallChatResponse = chatResponse;
-                        }
                     })
                     .doOnComplete(() -> {
                         endTime.set(System.currentTimeMillis());
@@ -145,9 +144,14 @@ public class ToolCallAgent extends ReActAgent {
                         streamError.set(error);
                     })
                     .doFinally(signal -> {
-                        persistAssistantTurn(signal, textBuf, reasoningBuf, finalUsage.get(),
-                                thinkingStartTime.get(), thinkingEndTime.get(), startTime.get(), endTime.get());
-                        latch.countDown();
+                        try {
+                            persistAssistantTurn(signal, textBuf, reasoningBuf, finalUsage.get(),
+                                    thinkingStartTime.get(), thinkingEndTime.get(), startTime.get(), endTime.get());
+                        } catch (Exception e) {
+                            streamError.compareAndSet(null, e);
+                        } finally {
+                            latch.countDown();
+                        }
                     })
                     .subscribe());
 
@@ -193,7 +197,7 @@ public class ToolCallAgent extends ReActAgent {
                 callPayload.setToolName(tc.name());
                 callPayload.setToolArgs(tc.arguments());
                 getAgentMessageService().saveAgentMessage(
-                        getSessionId(), AgentMessageEnum.TOOL.getValue(), callPayload, 0, 0L, 0L, 0, 0, 0);
+                        getSessionId(), getRunId(), AgentMessageEnum.TOOL.getValue(), callPayload, 0, 0L, 0L, 0, 0, 0);
             });
             log.info("{} 选择了 {} 个工具", getName(), toolCalls.size());
             return true;
@@ -210,25 +214,48 @@ public class ToolCallAgent extends ReActAgent {
         }
 
         long startTime = System.currentTimeMillis();
-        Prompt prompt = new Prompt(getMessageList(), chatOptions);
-        ToolExecutionResult result = toolCallingManager.executeToolCalls(prompt, toolCallChatResponse);
-        ToolResponseMessage toolResponseMessage = (ToolResponseMessage) CollectionUtil.getLast(result.conversationHistory());
+        if (currentToolPrompt == null || toolCallChatResponse == null) {
+            throw new IllegalStateException("缺少当前工具请求上下文");
+        }
+        ToolExecutionResult result = toolCallingManager.executeToolCalls(currentToolPrompt, toolCallChatResponse);
+        List<Message> history = result.conversationHistory();
+        if (history.isEmpty() || !(history.getLast() instanceof ToolResponseMessage)) {
+            throw new IllegalStateException("工具执行未返回标准工具响应");
+        }
+        ToolResponseMessage toolResponseMessage = (ToolResponseMessage) history.getLast();
+        // The manager supplies the assistant tool_calls and matching tool_call_id responses.
+        // Replace the history; appending it would duplicate the preceding conversation.
+        setMessageList(new ArrayList<>(history));
 
         toolResponseMessage.getResponses().forEach(r -> {
-            if (isMcpTool(r.name())) {
-                emit(AgentEvent.mcpToolResult(r.name(), r.responseData(), new HashMap<>()));
-            } else {
-                emit(AgentEvent.toolResult(r.name(), r.responseData(), new HashMap<>()));
+            String toolArguments = toolCalls.stream()
+                    .filter(tc -> Objects.equals(tc.id(), r.id()))
+                    .findFirst().map(AssistantMessage.ToolCall::arguments).orElse(null);
+            ToolResultPresentation presentation = ToolResultPresentation.from(
+                    r.name(), r.responseData(), toolArguments);
+            Map<String, Object> resultMeta = new HashMap<>();
+            resultMeta.put("displayResult", presentation.displayResult());
+            resultMeta.put("toolSuccess", presentation.toolSuccess());
+            resultMeta.put("displayFormat", presentation.displayFormat());
+            if (presentation.language() != null) {
+                resultMeta.put("language", presentation.language());
             }
-
-            getMessageList().add(new ToolResultMessage(r.responseData(), new HashMap<>(), r.name()));
+            if (isMcpTool(r.name())) {
+                emit(AgentEvent.mcpToolResult(r.name(), r.responseData(), resultMeta));
+            } else {
+                emit(AgentEvent.toolResult(r.name(), r.responseData(), resultMeta));
+            }
 
             AgentMessagePayload resultPayload = new AgentMessagePayload();
             resultPayload.setToolCallId(r.id());
             resultPayload.setToolName(r.name());
             resultPayload.setToolResult(r.responseData());
+            resultPayload.setDisplayResult(presentation.displayResult());
+            resultPayload.setToolSuccess(presentation.toolSuccess());
+            resultPayload.setDisplayFormat(presentation.displayFormat());
+            resultPayload.setLanguage(presentation.language());
             getAgentMessageService().saveAgentMessage(
-                    getSessionId(), AgentMessageEnum.TOOL_RESULT.getValue(),
+                    getSessionId(), getRunId(), AgentMessageEnum.TOOL_RESULT.getValue(),
                     resultPayload, 0, 0L, System.currentTimeMillis() - startTime, 0, 0, 0);
         });
 
@@ -245,28 +272,24 @@ public class ToolCallAgent extends ReActAgent {
         return collect;
     }
 
-    public static String buildPrompt(List<Message> messageList) {
-        StringBuilder sb = new StringBuilder();
-
-        for (Message message : messageList) {
-            if (message instanceof ToolResultMessage toolMsg) {
-                String content = truncate(toolMsg.getToolResult(), 6000);
-                sb.append("### SYSTEM_INTERNAL_DATA_START ###\n")
-                        .append("\nTool: ").append(toolMsg.getToolName()).append("\nOutput:\n")
-                        .append(content).append("\n")
-                        .append("\n### SYSTEM_INTERNAL_DATA_END ###\n");
-                continue;
-            }
-
-            if (!(message instanceof ToolResponseMessage) && StringUtils.isNotBlank(message.getText())) {
-                sb.append(message.getMessageType())
-                        .append(": ")
-                        .append(message.getText())
-                        .append("\n");
+    Prompt buildToolPrompt() {
+        if (!(chatOptions.copy() instanceof ToolCallingChatOptions options)) {
+            throw new IllegalStateException("Agent 模型配置必须支持工具调用");
+        }
+        Map<String, ToolCallback> callbacks = new LinkedHashMap<>();
+        for (ToolCallback callback : availableTools) callbacks.put(callback.getToolDefinition().name(), callback);
+        if (toolCallbackProvider != null) {
+            for (ToolCallback callback : toolCallbackProvider.getToolCallbacks()) {
+                callbacks.putIfAbsent(callback.getToolDefinition().name(), callback);
             }
         }
-
-        return sb.toString();
+        options.setToolCallbacks(new ArrayList<>(callbacks.values()));
+        options.setInternalToolExecutionEnabled(false);
+        Map<String, Object> context = new HashMap<>();
+        context.put("chatId", getSessionId());
+        context.put("userId", getUserId());
+        options.setToolContext(context);
+        return new Prompt(new ArrayList<>(getMessageList()), options);
     }
 
     static String buildAssistantMemory(String text, String reasoning) {
@@ -292,12 +315,12 @@ public class ToolCallAgent extends ReActAgent {
         agentMessagePayload.setReasoning(reasoningBuf.toString());
 
         String memoryText = buildAssistantMemory(textBuf.toString(), reasoningBuf.toString());
-        if (StringUtils.isNotBlank(memoryText)) {
+        if ((toolCalls == null || toolCalls.isEmpty()) && StringUtils.isNotBlank(memoryText)) {
             getMessageList().add(new AssistantMessage(memoryText));
         }
 
         getAgentMessageService().saveAgentMessage(
-                getSessionId(),
+                getSessionId(), getRunId(),
                 AgentMessageEnum.ASSISTANT.getValue(),
                 agentMessagePayload,
                 usageMetrics.totalTokens(),
@@ -312,26 +335,6 @@ public class ToolCallAgent extends ReActAgent {
         return toolName != null && toolName.startsWith("maps");
     }
 
-    private static String truncate(String text, int maxLen) {
-        if (text == null) {
-            return "";
-        }
-        if (text.length() <= maxLen) {
-            return text;
-        }
-        return text.substring(0, maxLen)
-                + "\n...[TRUNCATED " + (text.length() - maxLen) + " chars]";
-    }
-
-    private static String truncateReasoning(String reasoning, int maxLength) {
-        if (reasoning == null || reasoning.length() <= maxLength) {
-            return reasoning;
-        }
-        int halfLen = maxLength / 2;
-        String head = reasoning.substring(0, halfLen);
-        String tail = reasoning.substring(reasoning.length() - halfLen);
-        return head + "\n...[reasoning truncated]...\n" + tail;
-    }
     static long safeDurationMillis(long startTime, long endTime, long fallbackEndTime) {
         long normalizedEndTime = endTime >= startTime ? endTime : Math.max(startTime, fallbackEndTime);
         return Math.max(0L, normalizedEndTime - startTime);

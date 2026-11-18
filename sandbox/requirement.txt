@@ -1,0 +1,29 @@
+
+# === 数学与科学计算 ===
+numpy
+scipy
+sympy
+mpmath
+
+# === 数据处理 ===
+pandas
+polars
+duckdb
+openpyxl
+xlsxwriter
+
+# === Office 与 PDF ===
+python-docx
+python-pptx
+pypdf
+pymupdf
+reportlab
+
+# === 图片与格式 ===
+Pillow
+beautifulsoup4
+lxml
+PyYAML
+chardet
+
+

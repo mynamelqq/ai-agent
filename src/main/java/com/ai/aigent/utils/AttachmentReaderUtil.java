@@ -82,17 +82,6 @@ public class AttachmentReaderUtil {
         String key = url.substring(url.indexOf(AiConstants.suffix_url) + AiConstants.suffix_url.length());
         String fileType = attachment.getFileType();
         Long fileSize = attachment.getFileSize();
-//        if (fileType.startsWith("image/")) {
-//            COSObject object = getObject(AiConstants.bulk, key);
-//            try {
-//                return "User uploaded file: "+attachment.getFileName()+". Here are its contents:\n"+visionPerception.getVisionDescription(url);
-//            } catch (Exception e) {
-//                return e.getMessage();
-//            }
-//        }
-//        else if(fileType.startsWith("audio/")){
-//
-//        }
         if (fileType.toLowerCase().startsWith("video"))
         {
             try {
