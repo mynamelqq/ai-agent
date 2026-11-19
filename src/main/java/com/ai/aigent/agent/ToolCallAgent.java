@@ -288,6 +288,7 @@ public class ToolCallAgent extends ReActAgent {
         Map<String, Object> context = new HashMap<>();
         context.put("chatId", getSessionId());
         context.put("userId", getUserId());
+        context.put("sandboxRunToken", getSandboxRunToken());
         options.setToolContext(context);
         return new Prompt(new ArrayList<>(getMessageList()), options);
     }

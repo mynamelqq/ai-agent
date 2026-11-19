@@ -58,6 +58,7 @@ public abstract class BaseAgent {
     private ChatClient chatClient;
     private String sessionId;
     private Long runId;
+    private String sandboxRunToken;
     private List<Media>mediaList = new ArrayList<>();
     private  AgentSessionRegistry agentSessionRegistry;
     private SseEmitter emitter;
@@ -84,11 +85,13 @@ public abstract class BaseAgent {
             log.error("SSE 发送失败", e);
         }
     }
-     public void cancel() {
+     public synchronized void cancel() {
         cancelled = true;
-        if (sandboxManager != null && sessionId != null) sandboxManager.cancel(sessionId);
-        if (currentDisposable != null && !currentDisposable.isDisposed()) {
-            currentDisposable.dispose();
+        try {
+            if (sandboxManager != null && sessionId != null && sandboxRunToken != null)
+                sandboxManager.cancel(sessionId, sandboxRunToken);
+        } finally {
+            if (currentDisposable != null && !currentDisposable.isDisposed()) currentDisposable.dispose();
         }
     }
     public abstract String step();
@@ -101,19 +104,25 @@ public abstract class BaseAgent {
          userId = null;
          sessionId = null;
          runId = null;
+         sandboxRunToken = null;
          emitter = null;
          mediaList.clear();
          messageList.clear();
          sessionAttachments.clear();
     }
      public SseEmitter agentRun(String userPrompt, String sessionId, Long runId, List<Long>attachments, String userId) {
-        initializeRunState(sessionId, userId);
-        this.runId = Objects.requireNonNull(runId, "runId 不能为空");
+        synchronized (this) {
+            initializeRunState(sessionId, userId);
+            this.runId = Objects.requireNonNull(runId, "runId 不能为空");
+            if (Boolean.TRUE.equals(cancelled)) throw new java.util.concurrent.CancellationException("任务已取消");
+            if (sandboxManager != null) sandboxRunToken = sandboxManager.beginRun(sessionId, userId, runId);
+        }
 
         emitter = new SseEmitter(1000 * 60 * 8L);
         emitter.onTimeout(() -> {
             cancel(); // 超时也取消后台流
         });
+        try {
         CompletableFuture.runAsync(() -> {
             try {
                 this.agentState = AgentState.RUNNING;
@@ -128,7 +137,7 @@ public abstract class BaseAgent {
                 for (int i = 0; i < maxStep && agentState != AgentState.FINISHED && !Boolean.TRUE.equals(cancelled); i++) {
                     currentStep = i + 1;
                     emit(AgentEvent.stepStart(currentStep));//发送步骤第几
-                    log.info("Executing step {}/{}", currentStep, maxStep);
+//                    log.info("Executing step {}/{}", currentStep, maxStep);
                     String stepResult = step();
                     if ("思考完成-无需行动".equals(stepResult)) break;
                 }
@@ -147,10 +156,15 @@ public abstract class BaseAgent {
                 emit(new AgentEvent("error", e.getMessage(), null));
                 emitter.completeWithError(e);//发送错误
             } finally {
+                if (sandboxManager != null) sandboxManager.finishRun(sessionId, sandboxRunToken);
                 agentSessionRegistry.remove(sessionId, this);
                 cleanup();
             }
         }, agentExecutor);
+        } catch (RuntimeException | Error e) {
+            if (sandboxManager != null) sandboxManager.finishRun(sessionId, sandboxRunToken);
+            throw e;
+        }
         return emitter;
     }
     private void initializeRunState(String sessionId, String userId) {
@@ -253,6 +267,7 @@ public abstract class BaseAgent {
                             .name(aiAttachment.getFileName())
                             .data(bytes)
                             .build());
+                    agentAttachments.add(toAgentAttachment(aiAttachment));//图片也最好保存下
                 } catch (Exception e) {
                     log.error("读取图片附件失败: {}", aiAttachment.getFileName(), e);
                 }

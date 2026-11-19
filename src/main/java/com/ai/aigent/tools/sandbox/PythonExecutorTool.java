@@ -15,6 +15,7 @@ public class PythonExecutorTool {
                 .writeValueAsString(sandbox.execute(
             context.getContext().get("chatId").toString(),
                         context.getContext().get("userId").toString(),
+            java.util.Objects.requireNonNull(context.getContext().get("sandboxRunToken"), "缺少沙箱运行令牌").toString(),
             new String[]{"python", "-I", "-B", "-c", pythonCode}));
     }
 }

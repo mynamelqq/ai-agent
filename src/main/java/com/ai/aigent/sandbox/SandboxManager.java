@@ -11,6 +11,9 @@ import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import jakarta.annotation.PreDestroy;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import java.io.*;
@@ -22,6 +25,8 @@ import java.util.concurrent.*;
 
 @Service
 public class SandboxManager {
+    private static final Logger log = LoggerFactory.getLogger(SandboxManager.class);
+    private static final Map<String, String> SANDBOX_LABEL = Map.of("app", "aigent-sandbox");
     private final AgentSessionService sessions;
     private DockerClient docker;
     private final Map<String, Slot> slots = new ConcurrentHashMap<>();
@@ -34,7 +39,18 @@ public class SandboxManager {
     @Value("${sandbox.enabled:false}") private boolean enabled;
     @Value("${sandbox.image:aigent-python:1}") private String image;
     @Value("${sandbox.idle-minutes:15}") private long idleMinutes;
+    private volatile boolean closing;
+    private enum State { IDLE, CREATING, READY, RUNNING, CANCELLED, DELETED }
+    private static class Run {
+        final String token = UUID.randomUUID().toString();
+        final Long runId;
+        boolean cancelled;
+        Run(Long runId) { this.runId = runId; }
+    }
     private static class Slot {
+        final Object stateLock = new Object();
+        Run run;
+        State state = State.IDLE;
         volatile String id;
         volatile long last = System.currentTimeMillis();
     }
@@ -43,6 +59,24 @@ public class SandboxManager {
     }
     public SandboxManager(AgentSessionService sessions) {
         this.sessions = sessions;
+    }
+    @PostConstruct
+    public void initialize() {
+        if (!enabled) return;
+        // Run before this bean becomes available; never depend on the lost in-memory Slots.
+        DockerClient c = client();
+        int removed = 0;
+        for (Container container : c.listContainersCmd().withShowAll(true)
+                .withLabelFilter(SANDBOX_LABEL).exec()) {
+            try {
+                c.removeContainerCmd(container.getId()).withForce(true).exec();
+                removed++;
+            } catch (NotFoundException ignored) {
+                // Another cleanup may already have removed it.
+            }
+        }
+        log.info("Sandbox startup cleanup removed {} containers", removed);
+        // Other failures propagate and prevent startup with uncleaned containers.
         reaper.scheduleWithFixedDelay(this::reap, 60, 60, TimeUnit.SECONDS);
     }
     private synchronized DockerClient client() {
@@ -65,38 +99,76 @@ public class SandboxManager {
         if (Files.isSymbolicLink(path)) throw new IllegalArgumentException("会话目录不能是符号链接");
         return path;
     }
+    Path sessionDirectory(String base, String session) { return directory(base, session); }
     public void authorize(String session, String user) {
         var value = sessions.getById(session);
         if (user == null || value == null || !Objects.equals(value.getUserId(), user))
             throw new SecurityException("无权访问会话");
     }
-    public Execution execute(String session, String user, String[] command) throws Exception {
+    public String beginRun(String session, String user, Long runId) {
+        authorize(session, user);
+        Objects.requireNonNull(runId, "runId");
+        Slot slot = slots.computeIfAbsent(session, k -> new Slot());
+        synchronized (slot) {
+            synchronized (slot.stateLock) {
+                if (closing || slot.state == State.DELETED) throw new CancellationException("沙箱已关闭");
+                if (slot.run != null && !slot.run.cancelled) throw new IllegalStateException("会话已有运行任务");
+                if (slot.run != null && slot.run.cancelled && slot.id != null) remove(slot);
+                slot.run = new Run(runId);
+                slot.state = State.IDLE;
+                return slot.run.token;
+            }
+        }
+    }
+    private void check(Slot slot, String token) {
+        if (closing || slot.state == State.DELETED || slot.run == null ||
+            !Objects.equals(slot.run.token, token) || slot.run.cancelled)
+            throw new CancellationException("任务已取消或运行标识已过期");
+    }
+    public void finishRun(String session, String token) {
+        Slot slot = slots.get(session);
+        if (slot == null) return;
+        synchronized (slot.stateLock) {
+            if (slot.run != null && Objects.equals(slot.run.token, token)) {
+                slot.run.cancelled = true;
+                if (slot.state != State.DELETED) slot.state = State.IDLE;
+            }
+        }
+    }
+    public Execution execute(String session, String user, String token, String[] command) throws Exception {
         authorize(session, user);
         if (!enabled) throw new IllegalStateException("沙箱尚未启用，请配置 sandbox.enabled");
         Slot slot = slots.computeIfAbsent(session, k -> new Slot());//懒启动 只有不存在的时候才启动
         synchronized (slot) {
+            synchronized (slot.stateLock) { check(slot, token); }
             slot.last = System.currentTimeMillis();
             DockerClient c = client();
             if (slot.id == null) {
-                Path work = directory(FileConstant.AGENT_RUN_SANDBOX_TEMP_DIR, session);
-                Path attachments = directory(FileConstant.ATTACHMENTS_SAVE_DIR, session);
+                synchronized (slot.stateLock) { check(slot, token); slot.state = State.CREATING; }
+                Path work = sessionDirectory(FileConstant.AGENT_RUN_SANDBOX_TEMP_DIR, session);
+                Path attachments = sessionDirectory(FileConstant.ATTACHMENTS_SAVE_DIR, session);
                 Files.createDirectories(work);
                 Files.createDirectories(attachments);//确保目录
                 // Directory ownership must be provisioned for container UID 10001 by the operator.
                 HostConfig host = HostConfig.newHostConfig().withNetworkMode("none")
                     .withReadonlyRootfs(true).withCapDrop(Capability.ALL)
                     .withSecurityOpts(List.of("no-new-privileges:true"))
-                    .withMemory(512L * 1024 * 1024).withMemorySwap(512L * 1024 * 1024)
+                    .withMemory(128L * 1024 * 1024).withMemorySwap(128L * 1024 * 1024)
                     .withNanoCPUs(1_000_000_000L).withPidsLimit(64L)
                     .withTmpFs(Map.of("/tmp", "rw,noexec,nosuid,size=64m"))
                     .withBinds(new Bind(work.toString(), new Volume("/workspace")),
                         new Bind(attachments.toString(), new Volume("/attachments"), AccessMode.ro));
-                slot.id = c.createContainerCmd(image).withUser("10001:10001")
+                String createdId = c.createContainerCmd(image).withUser("10001:10001")
                     .withWorkingDir("/workspace").withHostConfig(host)
                     .withLabels(Map.of("app", "aigent-sandbox", "session", session))
                     .withCmd("sleep", "infinity").exec().getId();
                 try {
-                    c.startContainerCmd(slot.id).exec();
+                    synchronized (slot.stateLock) {
+                        slot.id = createdId;
+                        check(slot, token);
+                        c.startContainerCmd(createdId).exec();
+                        slot.state = State.READY;
+                    }
                 }
                 catch (Exception e)
                 {
@@ -106,15 +178,20 @@ public class SandboxManager {
             }
             String id = slot.id;
             try {
+                synchronized (slot.stateLock) { check(slot, token); slot.state = State.RUNNING; }
                 var exec = c.execCreateCmd(id).withAttachStdout(true).withAttachStderr(true)
                     .withTty(false).withCmd(command).exec();
                 Capture capture = new Capture();
                 try (capture) {
-                    c.execStartCmd(exec.getId()).exec(capture);
+                    synchronized (slot.stateLock) {
+                        check(slot, token);
+                        c.execStartCmd(exec.getId()).exec(capture);
+                    }
                     if (!capture.awaitCompletion(100, TimeUnit.SECONDS)) {
                         remove(slot);
                         return new Execution(null, capture.out(), capture.err(), true);
                     }
+                    synchronized (slot.stateLock) { check(slot, token); slot.state = State.READY; }
                     return new Execution(c.inspectExecCmd(exec.getId()).exec().getExitCodeLong(),
                         capture.out(), capture.err(), false);
                 }
@@ -127,14 +204,59 @@ public class SandboxManager {
             }
         }
     }
-    // Cancellation intentionally bypasses the execution lock to kill a running exec.
-    public void cancel(String session) {
+    public ArtifactSnapshot snapshot(String session, String user, String token, String relativePath) throws IOException {
+        authorize(session, user);
         Slot slot = slots.get(session);
-        if (slot != null) remove(slot);
+        if (slot == null) throw new CancellationException("任务不存在");
+        synchronized (slot) {
+            String id;
+            synchronized (slot.stateLock) { check(slot, token); id = slot.id; }
+            boolean paused = false;
+            ArtifactSnapshot captured = null;
+            try {
+                // Freeze sandbox writers, including background children, during the bounded copy.
+                if (id != null) { client().pauseContainerCmd(id).exec(); paused = true; }
+                synchronized (slot.stateLock) { check(slot, token); }
+                ArtifactSnapshot snapshot = captured = ArtifactSnapshot.capture(
+                        sessionDirectory(FileConstant.AGENT_RUN_SANDBOX_TEMP_DIR, session), relativePath);
+                try {
+                    synchronized (slot.stateLock) { check(slot, token); }
+                    return snapshot;
+                } catch (RuntimeException e) { snapshot.close(); throw e; }
+            } finally {
+                if (paused) {
+                    try { client().unpauseContainerCmd(id).exec(); }
+                    catch (NotFoundException ignored) { /* cancellation removed it */ }
+                    catch (RuntimeException e) {
+                        // A failed resume must not leave a permanently paused live container.
+                        if (captured != null) {
+                            try { captured.close(); } catch (IOException cleanup) { e.addSuppressed(cleanup); }
+                        }
+                        synchronized (slot.stateLock) { remove(slot); }
+                        throw e;
+                    }
+                }
+            }
+        }
     }
+    public void cancel(String session, String token) {
+        Slot slot = slots.computeIfAbsent(session, k -> new Slot());
+        synchronized (slot.stateLock) {
+            if (token != null && (slot.run == null || !Objects.equals(slot.run.token, token))) return;
+            if (slot.run != null) slot.run.cancelled = true;
+            slot.state = State.CANCELLED;
+            // Serialize deletion with start and with publishing a newly created container ID.
+            remove(slot);
+        }
+    }
+    public void cancel(String session) { cancel(session, null); }
     public void delete(String session) throws IOException {
         Slot slot = slots.computeIfAbsent(session, k -> new Slot());
-        cancel(session);
+        synchronized (slot.stateLock) {
+            if (slot.run != null) slot.run.cancelled = true;
+            slot.state = State.DELETED;
+            remove(slot);
+        }
         synchronized (slot) {
             remove(slot);
             for (String base : List.of(FileConstant.ATTACHMENTS_SAVE_DIR, FileConstant.AGENT_RUN_SANDBOX_TEMP_DIR)) {
@@ -148,13 +270,13 @@ public class SandboxManager {
         }
     }
     private void remove(Slot slot) {
-        String id = slot.id;
-        if (id != null) {
-            try {
-                client().removeContainerCmd(id).withForce(true).exec(); slot.id = null;
-            }
-            catch (NotFoundException e) {
-                slot.id = null;
+        synchronized (slot.stateLock) {
+            String id = slot.id;
+            if (id != null) {
+                try {
+                    client().removeContainerCmd(id).withForce(true).exec();
+                    slot.id = null;
+                } catch (NotFoundException e) { slot.id = null; }
             }
         }
     }
@@ -176,6 +298,7 @@ public class SandboxManager {
         }
     }
     @PreDestroy public void close() {
+        closing = true;
         reaper.shutdownNow();
         slots.values().forEach(s -> { try { remove(s); } catch (Exception ignored) {} });
         if (docker != null) try
