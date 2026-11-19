@@ -13,6 +13,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 @Configuration
 public class AgentRuntimeConfig {
@@ -23,8 +28,23 @@ public class AgentRuntimeConfig {
     @Value("qwen4-max")
     private String manusChatModel;
 
+    @Value("${agent.runtime.executor:platform}")
+    private String executorMode;
+
+    @Value("${agent.runtime.max-active:200}")
+    private int maxActive;
+
     @Bean("agentTaskExecutor")
     public Executor agentTaskExecutor() {
+        if ("virtual".equalsIgnoreCase(executorMode)) {
+            if (maxActive < 1) {
+                throw new IllegalArgumentException("agent.runtime.max-active must be positive");
+            }
+            return new BoundedVirtualAgentExecutor(maxActive);
+        }
+        if (!"platform".equalsIgnoreCase(executorMode)) {
+            throw new IllegalArgumentException("Unknown agent.runtime.executor: " + executorMode);
+        }
         int processors = Runtime.getRuntime().availableProcessors();
         int corePoolSize = Math.max(4, processors);
         int maxPoolSize = Math.max(corePoolSize, processors * 2);
@@ -40,6 +60,48 @@ public class AgentRuntimeConfig {
         executor.setAwaitTerminationSeconds(30);
         executor.initialize();
         return executor;
+    }
+
+    static final class BoundedVirtualAgentExecutor implements Executor, AutoCloseable {
+        private final ExecutorService delegate = Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("agent-run-", 0).factory());
+        private final Semaphore permits;
+
+        BoundedVirtualAgentExecutor(int maxActive) {
+            this.permits = new Semaphore(maxActive);
+        }
+
+        @Override
+        public void execute(Runnable command) {
+            if (!permits.tryAcquire()) {
+                throw new RejectedExecutionException("Agent active limit reached");
+            }
+            try {
+                delegate.execute(() -> {
+                    try {
+                        command.run();
+                    } finally {
+                        permits.release();
+                    }
+                });
+            } catch (RuntimeException e) {
+                permits.release();
+                throw e;
+            }
+        }
+
+        @Override
+        public void close() {
+            delegate.shutdown();
+            try {
+                if (!delegate.awaitTermination(30, TimeUnit.SECONDS)) {
+                    delegate.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                delegate.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     @Bean("agentToolCallingManager")
