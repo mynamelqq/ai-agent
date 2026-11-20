@@ -1,6 +1,7 @@
 package com.ai.aigent.agent;
 
 import com.ai.aigent.service.AgentMessageService;
+import com.ai.aigent.service.AgentContextService;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.*;
@@ -43,6 +44,7 @@ class ToolCallAgentContextTest {
         agent.setRunId(1L);
         agent.setEmitter(mock(SseEmitter.class));
         agent.setAgentMessageService(mock(AgentMessageService.class));
+        agent.setAgentContextService(mock(AgentContextService.class));
         agent.setMessageList(new ArrayList<>(List.of(new SystemMessage("rules"), new UserMessage("calculate"))));
         return agent;
     }
@@ -81,6 +83,10 @@ class ToolCallAgentContextTest {
         assertEquals("call-1", result.getResponses().getFirst().id());
         assertEquals("5050", result.getResponses().getFirst().responseData());
         assertEquals(5, agent.getMessageList().size()); // final assistant, no duplicated tool-turn text
+        verify(agent.getAgentContextService(), times(2)).appendAssistant(
+                eq("session-1"), eq("user-1"), eq(1L), anyInt(), any(AssistantMessage.class));
+        verify(agent.getAgentContextService()).appendToolResponses(
+                eq("session-1"), eq("user-1"), eq(1L), anyInt(), any(ToolResponseMessage.class));
     }
 
     @Test
@@ -97,5 +103,29 @@ class ToolCallAgentContextTest {
         assertEquals(2, probe.calls);
         ToolResponseMessage results = (ToolResponseMessage) agent.getMessageList().getLast();
         assertEquals(List.of("call-1", "call-2"), results.getResponses().stream().map(ToolResponseMessage.ToolResponse::id).toList());
+    }
+
+    @Test
+    void autoCompactKeepsCurrentUserMessageAfterBoundary() {
+        ChatModel model = mock(ChatModel.class);
+        ToolCallAgent agent = agent(new ProbeTool(), model);
+        agent.setCurrentStep(1);
+        agent.setAutoCompactThresholdTokens(1);
+        agent.setMessageList(new ArrayList<>(List.of(new SystemMessage("rules"),
+                new UserMessage("previous task"), new UserMessage("current task"))));
+        var context = agent.getAgentContextService();
+        when(context.loadSnapshot("session-1", "user-1")).thenReturn(
+                new com.ai.aigent.service.AgentContextService.ContextSnapshot(
+                        List.of(new UserMessage("previous task"), new UserMessage("current task")), 3, 3, 0));
+        when(context.lastMessageBeforeRun("session-1", "user-1", 1L)).thenReturn(2L);
+        when(context.loadView("session-1", "user-1")).thenReturn(
+                List.of(new UserMessage("summary"), new UserMessage("current task")));
+        when(model.call(any(Prompt.class))).thenReturn(response("summary"));
+
+        Prompt prompt = agent.buildToolPrompt();
+
+        verify(context).publishCompact(eq("session-1"), eq("user-1"), eq(3L), eq(2L),
+                anyString(), eq("summary"));
+        assertEquals("current task", ((UserMessage) prompt.getInstructions().getLast()).getText());
     }
 }

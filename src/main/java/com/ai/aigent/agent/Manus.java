@@ -2,6 +2,7 @@ package com.ai.aigent.agent;
 
 import com.ai.aigent.agent.model.AgentSessionRegistry;
 import com.ai.aigent.service.AgentMessageService;
+import com.ai.aigent.service.AgentContextService;
 import com.ai.aigent.service.AgentSessionService;
 import com.ai.aigent.service.AiAttachmentService;
 import com.ai.aigent.utils.AttachmentReaderUtil;
@@ -11,6 +12,7 @@ import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
@@ -26,13 +28,15 @@ public class Manus extends ToolCallAgent {
                  AgentSessionService agentSessionService,
                  com.ai.aigent.sandbox.SandboxManager sandbox,
                  AgentMessageService agentMessageService,
+                 AgentContextService agentContextService,
                  AgentSessionRegistry agentSessionRegistry,
                  ToolCallbackProvider toolCallbackProvider,
                  AiAttachmentService attachmentService,
                  AttachmentReaderUtil attachmentReaderUtil,
                  @Qualifier("agentToolCallingManager") ToolCallingManager agentToolCallingManager,
                  @Qualifier("manusChatOptions") ChatOptions manusChatOptions,
-                 @Qualifier("agentTaskExecutor") Executor agentTaskExecutor) {
+                 @Qualifier("agentTaskExecutor") Executor agentTaskExecutor,
+                 @Value("${agent.context.auto-compact-threshold-tokens:24000}") int autoCompactThresholdTokens) {
         super(availableTools, toolCallbackProvider, agentToolCallingManager, manusChatOptions);
 
         this.setSandboxManager(sandbox);
@@ -145,6 +149,8 @@ public class Manus extends ToolCallAgent {
         this.setCancelled(false);
         this.setAgentSessionRegistry(agentSessionRegistry);
         this.setAgentMessageService(agentMessageService);
+        this.setAgentContextService(agentContextService);
+        this.setAutoCompactThresholdTokens(autoCompactThresholdTokens);
         this.setAgentSessionService(agentSessionService);
         this.setChatClient(manusChatClient);
     }

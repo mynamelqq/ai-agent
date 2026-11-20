@@ -64,6 +64,8 @@ public class AgentController {
     @Autowired
     private AgentMessageService agentMessageService;
     @Autowired
+    private AgentContextService agentContextService;
+    @Autowired
     private AiAttachmentService aiAttachmentService;
     @Autowired
     private SandboxManager sandboxManager;
@@ -265,6 +267,7 @@ public class AgentController {
         }
         try { sandboxManager.delete(sessionId); }
         catch (IOException e) { throw new RuntimeException("沙箱文件清理失败，请重试", e); }
+        agentContextService.deleteSession(sessionId, requireUserId(request));
         // 删除会话
         agentSessionService.removeById(sessionId);
         // 删除消息

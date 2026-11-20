@@ -9,6 +9,7 @@ import com.ai.aigent.constant.AiConstants;
 import com.ai.aigent.constant.FileConstant;
 import com.ai.aigent.entity.domain.AiAttachment;
 import com.ai.aigent.service.AgentMessageService;
+import com.ai.aigent.service.AgentContextService;
 import com.ai.aigent.service.AgentSessionService;
 import com.ai.aigent.service.AiAttachmentService;
 import com.ai.aigent.utils.AttachmentReaderUtil;
@@ -65,6 +66,7 @@ public abstract class BaseAgent {
     private Executor agentExecutor = ForkJoinPool.commonPool();
     private Consumer<List<AgentEvent>> onStepFinished;//步骤完成回调
     private  AgentMessageService agentMessageService;
+    private AgentContextService agentContextService;
     private  AgentSessionService agentSessionService;
     private List<Message>messageList=new ArrayList<>();
     private List<AgentAttachment> sessionAttachments = new ArrayList<>();
@@ -132,8 +134,15 @@ public abstract class BaseAgent {
                     mergeSessionAttachments(loadAttachments(attachments));
                     emit(AgentEvent.attachmentLoaded()); // 通知前端"附件读取完成"
                 }
-                this.getMessageList().add(new SystemMessage(buildRuntimeSystemPrompt()));
-                this.getMessageList().add(new UserMessage(userPrompt));
+                if (agentContextService != null) {
+                    List<Long> imageIds = mediaList.stream().map(Media::getId).map(Long::valueOf).toList();
+                    agentContextService.appendUser(sessionId, userId, runId, userPrompt, imageIds);
+                    messageList.add(new SystemMessage(buildRuntimeSystemPrompt()));
+                    messageList.addAll(agentContextService.loadView(sessionId, userId));
+                } else {
+                    messageList.add(new SystemMessage(buildRuntimeSystemPrompt()));
+                    messageList.add(UserMessage.builder().text(userPrompt).media(mediaList).build());
+                }
                 for (int i = 0; i < maxStep && agentState != AgentState.FINISHED && !Boolean.TRUE.equals(cancelled); i++) {
                     currentStep = i + 1;
                     emit(AgentEvent.stepStart(currentStep));//发送步骤第几
@@ -260,7 +269,10 @@ public abstract class BaseAgent {
             if (aiAttachment.getFileType().startsWith("image/")) {//图片上传cos直接放到记忆数组
                 try {
                     COSObject object = attachmentReaderUtil.getObject(AiConstants.bulk, aiAttachment.getFileUrl());
-                    byte[] bytes = StreamUtils.copyToByteArray(object.getObjectContent());
+                    byte[] bytes;
+                    try (InputStream stream = object.getObjectContent()) {
+                        bytes = StreamUtils.copyToByteArray(stream);
+                    }
                     mediaList.add(Media.builder()
                             .mimeType(MimeTypeUtils.parseMimeType(aiAttachment.getFileType()))
                             .id(aiAttachment.getId().toString())
@@ -270,6 +282,7 @@ public abstract class BaseAgent {
                     agentAttachments.add(toAgentAttachment(aiAttachment));//图片也最好保存下
                 } catch (Exception e) {
                     log.error("读取图片附件失败: {}", aiAttachment.getFileName(), e);
+                    throw new IllegalStateException("读取图片附件失败: " + aiAttachment.getId(), e);
                 }
                 continue;
             }

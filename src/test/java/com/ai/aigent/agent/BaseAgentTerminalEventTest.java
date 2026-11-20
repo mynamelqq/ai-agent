@@ -2,7 +2,10 @@ package com.ai.aigent.agent;
 
 import com.ai.aigent.agent.model.AgentEvent;
 import com.ai.aigent.agent.model.AgentSessionRegistry;
+import com.ai.aigent.service.AgentContextService;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,11 +13,13 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.*;
 
 class BaseAgentTerminalEventTest {
     private static class RecordingAgent extends BaseAgent {
         private final List<String> eventTypes = new ArrayList<>();
         private final List<Long> observedRunIds = new ArrayList<>();
+        private List<Message> observedMessages;
 
         @Override
         protected void emit(AgentEvent event) {
@@ -24,6 +29,7 @@ class BaseAgentTerminalEventTest {
         @Override
         public String step() {
             observedRunIds.add(getRunId());
+            observedMessages = new ArrayList<>(getMessageList());
             return "继续执行";
         }
     }
@@ -73,5 +79,24 @@ class BaseAgentTerminalEventTest {
 
         assertEquals(List.of("cancelled"), agent.eventTypes);
         assertFalse(registry.isRunning("session"));
+    }
+
+    @Test
+    void loadsPersistedMessagesBeforeRunningStep() {
+        RecordingAgent agent = new RecordingAgent();
+        AgentContextService context = mock(AgentContextService.class);
+        when(context.loadView("session", "user")).thenReturn(List.of(
+                new UserMessage("earlier"), new UserMessage("current")));
+        agent.setAgentContextService(context);
+        agent.setAgentSessionRegistry(new AgentSessionRegistry());
+        agent.setAgentExecutor(Runnable::run);
+        agent.setMaxStep(1);
+
+        agent.agentRun("current", "session", 101L, List.of(), "user");
+
+        verify(context).appendUser("session", "user", 101L, "current", List.of());
+        assertEquals(3, agent.observedMessages.size());
+        assertEquals("earlier", ((UserMessage) agent.observedMessages.get(1)).getText());
+        assertEquals("current", ((UserMessage) agent.observedMessages.get(2)).getText());
     }
 }
